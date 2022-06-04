@@ -3,7 +3,7 @@ param(
     [switch]
     $smol
 )
-if($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 366 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 85){
+if ($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 366 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 85) {
     Write-Error "Output requires at least 366x85 characters window!"
     exit
 }
