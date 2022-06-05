@@ -5,24 +5,24 @@ param(
     [ValidateRange(0, 7)]
     $tailcopies = 0
 )
-if ($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 335 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 70) {
-    Write-Error "Output requires at least 335x70 characters window!"
+if ($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 324 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 70) {
+    Write-Error "Output requires at least 324x70 characters window!"
     exit
 }
-if ($host.UI.RawUI.WindowSize.Width -lt 335 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
-    $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (335, 70)
+if ($host.UI.RawUI.WindowSize.Width -lt 324 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
+    $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (324, 70)
     $host.UI.RawUI.BufferSize = $newsize
     $host.UI.RawUI.WindowSize = $newsize
     if ($null -ne $env:WT_SESSION) {
         # Windows Terminal - don't want to touch
         Write-Error "Detected Windows Terminal session and too small window!"
-        Write-Host "`nOutput requires at least 335x75 characters window, please resize it manually. Your current window is:"
+        Write-Host "`nOutput requires at least 324x75 characters window, please resize it manually. Your current window is:"
         $host.UI.RawUI.WindowSize
         exit
     }
 }
-if ($host.UI.RawUI.WindowSize.Width -lt 335 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
-    Write-Error "Failed to resize window to minimum size of 366x75 characters!"
+if ($host.UI.RawUI.WindowSize.Width -lt 324 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
+    Write-Error "Failed to resize window to minimum size of 324x75 characters!"
     exit
 }
 
@@ -135,26 +135,26 @@ v/zCtWPgL8YfSL11EWQjheBOIqJba8EdICIK/ymPx688gamFsXiLKcUCxNNShoDtu/WlifiLMEle
 EOdsFsCaFAY3Vyrge2peaqiJ6lFQlgDbXWj+oXmAKrPyn9mP/wNvi7NrsNYCAA=="
 
 $starter = "
-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"
+H4sIAAAAAAAEAO1aS27jMAzdDzB3EGYzmxzKR3FRLwx0Fg1gB1Ngdl0G7gdd9jY+ycSxLZH6Uh//
+EgdEITOUSD7ySU7ttqraUynkzzNjrD3lSLnLqcyY5vPzB/uN7YrD4dCenhcPdzWS63C7Irf3GR0u
+gdkOGpSCiwM11kob3d2LdkODiHWttnyYaxAnJ3delvatC+DE7vd4rP/ZIIIYsV/LRzuvZFZoEDZ3
+tDHpOdVW+S67zC+Yhfdw5OkJyDo4VOseJq2e7nKLxjD9eC/2LozPK1WcSxhLDGRt/eJdp61I9ddw
+MwBAO14FVFarR0qTbNFYST/KC704EXkliHMxY5l98n//bkEMnItlndVroLGhI/1WDojZyTovL74S
+lBf1zItwEbIyyVhh3U3deRruMBMxzn0jRTP2mpgwZsu3kV5M/WbuQz+PYTAmcRFtrGHcbVDOQrbZ
+z7eVsE0jac83QheHhDrN+eaOx2tlkrGObWzTz6syC83m/PWmdMcyPKNFrlktNNnp4J0hzvCVHcZa
+nm3zYYKNX/tJptVPcpIp60eGakcjoChTlNtsbGDYtu4dczu5VHZBaKKPJC/jOdk1pxevHMNCTVKU
++KR8jE3sYtt4o8Lx9gPTPFUzHOUWqE3iaxzJLE0W/u3qjH8rzAovysLn1srfw8lchGJKVQyg6Itn
+Ei3ELuNwRnmFYWrT4Iku47kZlbQokxmbGbXSH1y5k0vqe1fqMk4Dk/gazxkGZRGviZSYKTl6eZyh
+KJMZ29i0th9XFCIpTNpll1nEyqTVvE1lfPPJ+LHntfRtrG82znwW2/Vy/1Rw1OUQeP54HR/x+GjQ
+9+NCmXvUjAdNjgdiLhuvC34BgzrCr6+DXi8ZlMDmiA3gamjgLOr8VY2sJxuBKAEopQKQpNcipdoX
+oKCFMiilgg4dwEa0czEDfI07qwAGJXKCDJS0xoG7oPNtqVl4EQlpTP+rZcrYp+NVHhg2Me4pAg8O
+mRozS/jsPgsOlhxtgtbOw6P0iTOmG5whtnXTVg+D1G9t/UkQMKX6UmY1V00z6ptx5cbHxSdYweyd
+u9DHIGsi6xC0q9cv7mWrR4FONyagI02RZvUarh8GH239rjG2e9EaqwGbYlA0sTXwuamnlLQHpkvl
+gs0r7uqxky+XXN/9PQ9T0PhLaCTsISOgCzH4kpUDrh+YYg3W87nnsSA4Br1mWD+6DmBfygw7VE5a
+BcbVwQmyvNQEdi03qL4xTo2ggbYCkggXvCbnMYazDBgkGCeS8P7a1k9DF3RxKvFDDfaeoAKsx1h5
+EkoCniGKioBfce+fZVQFXSRgORt6NN6syMPNqF/waUQe71aSO9X7sOZZKSuuBbhMgfzlc0CgU/97
+MfZ1vyvyVnpH/S4Y/o0voeZbaPhfzTrYfuh3ae6D7JSf2ar3XtTFte74Zf2eCHXPDX7AnHjPkVwa
+0a1ky0RA9ftzTjdfDCRIAqrlfxxB7bHDSwAA"
 
 $ender = "
 H4sIAAAAAAAEAO2bS27cQAxE9wHmzllmGyDIAX2SAIYTpC0WWcUmWy24Aa5kip/iEzUejV7f3n59P3
@@ -212,7 +212,7 @@ $vectologo = Get-Base64GZipString $starter
 Write-Verbose "Reading ender"
 $reminder = Get-Base64GZipString $ender
 
-$globaloffsetX = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Width - 336)/2)
+$globaloffsetX = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Width - 324)/2)
 $globaloffsetY = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Height - 70)/2)+1
 $vectoslices = $vectologo -split "`n"
 Foreach($slice in $vectoslices){
