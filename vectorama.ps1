@@ -1,14 +1,31 @@
 [CmdletBinding()]
 param(
     [switch]
-    $smol
+    $smol,
+    [ValidateRange(0, 7)]
+    $tailcopies = 0
 )
 if ($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 366 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 85) {
     Write-Error "Output requires at least 366x85 characters window!"
     exit
 }
-$host.UI.RawUI.BufferSize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (366, $host.UI.RawUI.BufferSize.Height)
-$host.UI.RawUI.WindowSize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (366, 85)
+if ($host.UI.RawUI.WindowSize.Width -lt 366 -or $host.UI.RawUI.WindowSize.Height -lt 85) {
+    $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (366, 85)
+    $host.UI.RawUI.BufferSize = $newsize
+    $host.UI.RawUI.WindowSize = $newsize
+    if ($null -ne $env:WT_SESSION) {
+        # Windows Terminal - don't want to touch
+        Write-Error "Detected Windows Terminal session and too small window!"
+        Write-Host "`nOutput requires at least 366x85 characters window, please resize it manually. Your current window is:"
+        $host.UI.RawUI.WindowSize
+        exit
+    }
+}
+if ($host.UI.RawUI.WindowSize.Width -lt 366 -or $host.UI.RawUI.WindowSize.Height -lt 85) {
+    Write-Error "Failed to resize window to minimum size of 366x85 characters!"
+    exit
+}
+
 Clear-Host
 $frames = "
 H4sIAHywIU8AA+1d23XkOA797xT8oxBst+11z4QyMVQO+7ExbIAbydrdVXqCeJOEKNQZnzMURIq4
@@ -164,6 +181,12 @@ MNtRAJjqfzvO1WQv2yMSILtwke7wLcjBZwJcp01PckneNqELstzgGZVEYwxrmukZFBmLAPnM55Znps
 oT0Wt8L3D1durdJfypvHrwf9fUkGKX3LI84ZSVJReDzNEsXrC29RPHKeLLyZ8b7Ct1V8KGM948h5sL
 iSksKdnFThJJylik9eEMhExkeW+ZtbfEFwkZE/VvyB9gd/X1yctV4AAA=="
 
+$tailparts = "
+H4sIAAAAAAAEAMWVQQ6AIAwE73yBi09QUILhKbyB/1/V6EnLpjVAOZnojq0xs8YYm9eYtjSX52LZQ5
+lex+bzbmE9+j09wm6O9JAALUANCrvKlwZoAWpMODq0A0nmk4ZkvQcbkGA+aEg2oAVIMB/UO0tMXscx
+4vjttx2uf7IV5xmLs5LISnpqrfr/h5X01Ar7QaQlPbXifpCYSUutsBwkZtJSK+wGpqO01Aq7ob1d2y
+LMAa0mUh+aCgAA"
+
 Function Get-Base64GZipString {
     param($in)
     $data = [System.Convert]::FromBase64String($in)
@@ -173,20 +196,39 @@ Function Get-Base64GZipString {
     $sr = New-Object System.IO.StreamReader(New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Decompress))
     return $sr.ReadToEnd()
 }
+
+Function Write-Debug {
+    param($Message)
+    $old = $host.ui.RawUI.CursorPosition
+    $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(200, 1)
+    Write-host $Message -NoNewline
+    $host.ui.RawUI.CursorPosition = $old
+}
+
 Write-Verbose "Reading nyancat frames"
 $framedata = Get-Base64GZipString $frames
 $decompressedframes = $framedata -split "::"
 
+Write-Verbose "Reading nyancat tail parts"
+$decodedtailparts = Get-Base64GZipString $tailparts
+$tailslices = $decodedtailparts -split "`n"
+
 Write-Verbose "Reading starter"
 $vectologo = Get-Base64GZipString $starter
+
 Write-Verbose "Reading ender"
 $reminder = Get-Base64GZipString $ender
 
-Write-Host $vectologo
+$globaloffsetX = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Width - 366)/2)
+$globaloffsetY = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Height - 84)/2)+1
+$globaloffset = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, $globaloffsetY)
+$vectoslices = $vectologo -split "`n"
+Foreach($slice in $vectoslices){
+    $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.indexOf($slice) + $globaloffsetY + 1 ))
+    Write-host $slice -NoNewline
+}
 
 start-sleep -seconds 2
-
-Write-Host "`n`n"
 
 if ($smol.IsPresent) {
     $offset = 12
@@ -194,36 +236,68 @@ if ($smol.IsPresent) {
 else {
     $offset = 0
 }
-$origpos = $host.UI.RawUI.CursorPosition
-$currentframe = 1
-Write-Host ("{0,200}" -f $decompressedframes[($currentframe + $offset)]) -NoNewline
+$origpos = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.count + $globaloffsetY + 3))
+$tailsectionlength = 34
+$positionoffset = 238
+$tailstartoffset = $true
+$currentframe = 0
 $i = 0
-while ($i -lt 200) {
+[console]::CursorVisible = $false
+while ($i -lt 300) {
     if ($currentframe -ge 12) {
         $currentframe = 0
     }
     $host.ui.RawUI.CursorPosition = $origpos
-
+    
     if ($currentframe -eq 1) {
         #Fix trash characters on top
-        Write-Host "                                                                                                    " -NoNewline
+        Write-Host ("{0,350}" -f " ") -NoNewline
         Write-Host "`r"
         $host.ui.RawUI.CursorPosition = $origpos
     }
     
-    Write-Host ("{0,200}" -f $decompressedframes[($currentframe + $offset)]) -NoNewline
+    $slices = $decompressedframes[($currentframe + $offset)] -split "`n"
+    if ($currentframe % 2 -eq 0) {
+        $tailstartoffset = -not $tailstartoffset
+    }
+    foreach ($slice in $slices) {
+        if ($tailcopies -gt 0) {
+            $tailslice = $slices.indexOf($slice)
+            $tailpos = $tailslice
+            #if($tailslice -eq 7){$tailpos--}
+            $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $positionoffset - ($tailcopies * $tailsectionlength)), ($origpos.Y + $tailpos))
+            for ($i = 1; $i -le $tailcopies; $i++) {
+                if ($tailstartoffset) {
+                    $tailoffset = 23
+                }
+                else {
+                    $tailoffset = 0
+                }
+                $tailindex = $tailslice + $tailoffset
+                Write-Host $tailslices[$tailindex] -NoNewline
+            }
+        }
+        $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $positionoffset), ($origpos.Y + ($slices.indexOf($slice))))   
+        Write-Host $slice -NoNewline
+    }
 
     if ($currentframe -eq 0) {
         #Fix trash characters in the bottom
-        Write-Host "                                                                                                    " -NoNewline
-        Write-Host "`r"
+        $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $positionoffset), ($origpos.Y + 21))
+        Write-Host ("{0,350}" -f " ") -NoNewline
     }
-
-    Start-Sleep -Milliseconds 60
+    Start-Sleep -Milliseconds 50
     $currentframe++
     $i++
 }
+[console]::CursorVisible = $true
 Clear-Host
 Start-Sleep -Milliseconds 200
-Write-Host $reminder
-Start-Sleep -Seconds 2
+
+$reminderslices = $reminder -split "`n"
+Foreach($slice in $reminderslices){
+    $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX+85, ($reminderslices.indexOf($slice) + $globaloffsetY + 12 ))
+    Write-host $slice -NoNewline
+}
+
+Start-Sleep -Seconds 8
