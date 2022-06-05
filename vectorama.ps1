@@ -230,7 +230,7 @@ else {
 }
 $origpos = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.count + $globaloffsetY + 3))
 $tailsectionlength = 34
-$positionoffset = 208
+$positionoffset = 200
 $tailstartoffset = $true
 $currentframe = 0
 $i = 0
