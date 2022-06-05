@@ -5,24 +5,24 @@ param(
     [ValidateRange(0, 7)]
     $tailcopies = 0
 )
-if ($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 366 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 85) {
-    Write-Error "Output requires at least 366x85 characters window!"
+if ($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 335 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 70) {
+    Write-Error "Output requires at least 335x70 characters window!"
     exit
 }
-if ($host.UI.RawUI.WindowSize.Width -lt 366 -or $host.UI.RawUI.WindowSize.Height -lt 85) {
-    $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (366, 85)
+if ($host.UI.RawUI.WindowSize.Width -lt 335 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
+    $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (335, 70)
     $host.UI.RawUI.BufferSize = $newsize
     $host.UI.RawUI.WindowSize = $newsize
     if ($null -ne $env:WT_SESSION) {
         # Windows Terminal - don't want to touch
         Write-Error "Detected Windows Terminal session and too small window!"
-        Write-Host "`nOutput requires at least 366x85 characters window, please resize it manually. Your current window is:"
+        Write-Host "`nOutput requires at least 335x75 characters window, please resize it manually. Your current window is:"
         $host.UI.RawUI.WindowSize
         exit
     }
 }
-if ($host.UI.RawUI.WindowSize.Width -lt 366 -or $host.UI.RawUI.WindowSize.Height -lt 85) {
-    Write-Error "Failed to resize window to minimum size of 366x85 characters!"
+if ($host.UI.RawUI.WindowSize.Width -lt 335 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
+    Write-Error "Failed to resize window to minimum size of 366x75 characters!"
     exit
 }
 
@@ -135,33 +135,26 @@ v/zCtWPgL8YfSL11EWQjheBOIqJba8EdICIK/ymPx688gamFsXiLKcUCxNNShoDtu/WlifiLMEle
 EOdsFsCaFAY3Vyrge2peaqiJ6lFQlgDbXWj+oXmAKrPyn9mP/wNvi7NrsNYCAA=="
 
 $starter = "
-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
-AAA="
+H4sIAAAAAAAEAO1aS27bMBDdF+gdiG668aF0FAbRQkC6iAHJaIDusjSUD7LMbXSSWpZEzvAjckjq
+Z8sYGNR4yHl8w0fKtpqybE6FtD/PjLHmxJFzt1ORMcPr5w/2G8flh8OhOT0vDnc1xk28XZnb15k/
+XZKznTRouTAHa6xRNrq7N+OGBhlrl9ryMNdgTk3uuizGty7AE7vf47H6N0YR5Ij9Wh7tvJaNUoO4
+uaONaVRTVyZKvttu8xsW5D2cfk4tspYZvWPHmNHvn32LwXD68VnGF2T8vFLhXCJYESNrqhdynbZi
+5V+nDqEQj1cDRTb6kdNmWwzWph+Vxb9OEfNKgHOxYFWI6s+Dt2Bu+cUKcBRAYLBlcdJGDsDsFCAp
+C9WC5uV7EkakCBnZK1gT4E3dmnIf7aUQn/tOyy+Y1DEh5pFPI7PYlp59SdIyhtGYJEV0sEF8t6E+
+P93NfuqtRHgGS3vqeSzoEKjTnHpuPKSRvYJNwmOb/scr81PcnN/0tIWyjOT8kBtGC53sdPTOgDN8
+ZEewUXLb/GfCU2r7+Wb0T3K+aeNHQh1nI6AoU5TbHmwR27ZuLrm3znShQZaiDypS8JxCmzMLaY5h
+UJMUJX5SlGCb0Ng2HtpwPGBhFZkuLNM2rxNpM2pwpMgMs6CvXCf+rYgsvCgLn2Yrf+onI2iLaQWy
+8GOuo82MbLuCw8VFgmFbscEdXcFziytpUSYLtotrpV/OOEVW+gNf+ojOAJtRg+eE4TMIqaMPZp85
+kjLOUJTJgseEtbYvYkRNaaLabbdZbFRUq3mMy+eRK/wan9fS97nU2Tjns9gGyOlTwaiLHjh/vLaP
+uH20+Lt2rvU9Gtq9h+OG7MuG61xcQFBH+PG10fmVgALEHHEAHA01nEWdv6qR9WQDEQUgpdAIUvxG
+pvT4HBQ01xqFUtB+BbCBbS57gI/xyspBQIGSoABtWkPDXdD5ttQsvIge05j+u8yU2KfTFQ+E7Yl7
+CuDBkH0xs4QPAmTBYL3RJljaPBwlBWfMavCH2FR1Uz70Vr011aeHgS7ll9arvnrqwV8PI9eUFJ9g
+BHt2kcKMQfVEFiRoe69eCOOXj5Kmtu1Bk9JF6dV5hL9vfDTVuyF4PIsxWAdsw6B5YotBuc0njMp6
+hto5XUh6xet8WNuXS+Fv3899F9T+kh6lCFAjMIVsfKnOnuAPLLoa+0Xf81AZjMHs6cePLgjYsjLL
+5sVpw0GALa9gupfiwHUsAspvTFgthWEshWIyhSjOecBwVpmDkhPSktlfm+qpXw4tTg0/9ODsCUrB
+OrK1f1ZpFWBIvRL5K1bDWaVXCkhhWOijo+VttARwn+oGfBpKgDcyJZ2evR/zrNUXFwVcpijB5XVA
+7JN/6hhWerdzisX1jhQgxf+NL6HnW3rEu2EcHN8rQOn7oCYVB7yevTN9cGM6cVm9J6I/9BDoyfe8
+U0lutVy/3pGJGOv2cB7QbzG2oCx8I/8Dvtf9oJpMAAA="
 
 $ender = "
 H4sIAAAAAAAEAO2bS27cQAxE9wHmzllmGyDIAX2SAIYTpC0WWcUmWy24Aa5kip/iEzUejV7f3n59P3
@@ -219,9 +212,8 @@ $vectologo = Get-Base64GZipString $starter
 Write-Verbose "Reading ender"
 $reminder = Get-Base64GZipString $ender
 
-$globaloffsetX = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Width - 366)/2)
-$globaloffsetY = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Height - 84)/2)+1
-$globaloffset = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, $globaloffsetY)
+$globaloffsetX = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Width - 336)/2)
+$globaloffsetY = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Height - 70)/2)+1
 $vectoslices = $vectologo -split "`n"
 Foreach($slice in $vectoslices){
     $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.indexOf($slice) + $globaloffsetY + 1 ))
@@ -238,7 +230,7 @@ else {
 }
 $origpos = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.count + $globaloffsetY + 3))
 $tailsectionlength = 34
-$positionoffset = 238
+$positionoffset = 208
 $tailstartoffset = $true
 $currentframe = 0
 $i = 0
@@ -251,7 +243,7 @@ while ($i -lt 300) {
     
     if ($currentframe -eq 1) {
         #Fix trash characters on top
-        Write-Host ("{0,350}" -f " ") -NoNewline
+        Write-Host ("{0,300}" -f " ") -NoNewline
         Write-Host "`r"
         $host.ui.RawUI.CursorPosition = $origpos
     }
@@ -284,7 +276,7 @@ while ($i -lt 300) {
     if ($currentframe -eq 0) {
         #Fix trash characters in the bottom
         $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $positionoffset), ($origpos.Y + 21))
-        Write-Host ("{0,350}" -f " ") -NoNewline
+        Write-Host ("{0,300}" -f " ") -NoNewline
     }
     Start-Sleep -Milliseconds 50
     $currentframe++
@@ -296,7 +288,7 @@ Start-Sleep -Milliseconds 200
 
 $reminderslices = $reminder -split "`n"
 Foreach($slice in $reminderslices){
-    $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX+85, ($reminderslices.indexOf($slice) + $globaloffsetY + 12 ))
+    $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX+64, ($reminderslices.indexOf($slice) + $globaloffsetY + 8 ))
     Write-host $slice -NoNewline
 }
 
