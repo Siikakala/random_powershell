@@ -1,24 +1,25 @@
 [CmdletBinding()]
 param()
 if ($host.UI.RawUI.WindowSize.Width -lt 324 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
-    try {
-        $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (324, 70)
-        $host.UI.RawUI.BufferSize = $newsize
-        $host.UI.RawUI.WindowSize = $newsize
-    }
-    catch {}
     if ($null -ne $env:WT_SESSION) {
         # Windows Terminal - don't want to touch
         Write-Error "Detected Windows Terminal session and too small window!"
-        Write-Host "`nOutput requires at least 324x75 characters window, please resize it manually (Recommended method: Alt-enter to full screen, then zoom out with ctrl-minus until output fits). Your current window is: $($host.UI.RawUI.WindowSize.Width)x$($host.UI.RawUI.WindowSize.Height)"
+        Write-Host "`nOutput requires at least 324x75 characters window, please resize it manually. Your current window is: $($host.UI.RawUI.WindowSize.Width)x$($host.UI.RawUI.WindowSize.Height)`n`nRecommended method: Alt-enter to full screen, then zoom out with ctrl-minus until output fits"
         exit
+    }
+    else {
+        try {
+            $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (324, 70)
+            $host.UI.RawUI.BufferSize = $newsize
+            $host.UI.RawUI.WindowSize = $newsize
+        }
+        catch {}
     }
 }
 if ($host.UI.RawUI.WindowSize.Width -lt 324 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
     Write-Error "Failed to resize window to minimum size of 324x75 characters!"
     exit
 }
-
 Clear-Host
 $frames = "
 H4sIAHywIU8AA+1d23XkOA797xT8oxBst+11z4QyMVQO+7ExbIAbydrdVXqCeJOEKNQZnzMURIq4
