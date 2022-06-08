@@ -1,10 +1,5 @@
 [CmdletBinding()]
-param(
-    [switch]
-    $smol,
-    [ValidateRange(0, 7)]
-    $tailcopies = 0
-)
+param()
 if ($host.UI.RawUI.WindowSize.Width -lt 324 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
     $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (324, 70)
     $host.UI.RawUI.BufferSize = $newsize
@@ -170,11 +165,6 @@ MNtRAJjqfzvO1WQv2yMSILtwke7wLcjBZwJcp01PckneNqELstzgGZVEYwxrmukZFBmLAPnM55Znps
 oT0Wt8L3D1durdJfypvHrwf9fUkGKX3LI84ZSVJReDzNEsXrC29RPHKeLLyZ8b7Ct1V8KGM948h5sL
 iSksKdnFThJJylik9eEMhExkeW+ZtbfEFwkZE/VvyB9gd/X1yctV4AAA=="
 
-$tailparts = "
-H4sIAAAAAAAEAMWVQQ6AIAwE73yBi09QUILhKbyB/1/V6EnLpjVAOZnojq0xs8YYm9eYtjSX52LZQ5
-lex+bzbmE9+j09wm6O9JAALUANCrvKlwZoAWpMODq0A0nmk4ZkvQcbkGA+aEg2oAVIMB/UO0tMXscx
-4vjttx2uf7IV5xmLs5LISnpqrfr/h5X01Ar7QaQlPbXifpCYSUutsBwkZtJSK+wGpqO01Aq7ob1d2y
-LMAa0mUh+aCgAA"
 
 Function Get-Base64GZipString {
     param($in)
@@ -197,10 +187,6 @@ Function Write-Debug {
 Write-Verbose "Reading nyancat frames"
 $framedata = Get-Base64GZipString $frames
 $decompressedframes = $framedata -split "::"
-
-Write-Verbose "Reading nyancat tail parts"
-$decodedtailparts = Get-Base64GZipString $tailparts
-$tailslices = $decodedtailparts -split "`n"
 
 Write-Verbose "Reading starter"
 $vectologo = Get-Base64GZipString $starter
@@ -225,9 +211,7 @@ else {
     $offset = 0
 }
 $origpos = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.count + $globaloffsetY + 3))
-$tailsectionlength = 34
 $positionoffset = 200
-$tailstartoffset = $true
 $currentframe = 0
 $i = 0
 [console]::CursorVisible = $false
@@ -245,26 +229,7 @@ while ($i -lt 300) {
     }
     
     $slices = $decompressedframes[($currentframe + $offset)] -split "`n"
-    if ($currentframe % 2 -eq 0) {
-        $tailstartoffset = -not $tailstartoffset
-    }
     foreach ($slice in $slices) {
-        if ($tailcopies -gt 0) {
-            $tailslice = $slices.indexOf($slice)
-            $tailpos = $tailslice
-            #if($tailslice -eq 7){$tailpos--}
-            $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $positionoffset - ($tailcopies * $tailsectionlength)), ($origpos.Y + $tailpos))
-            for ($i = 1; $i -le $tailcopies; $i++) {
-                if ($tailstartoffset) {
-                    $tailoffset = 23
-                }
-                else {
-                    $tailoffset = 0
-                }
-                $tailindex = $tailslice + $tailoffset
-                Write-Host $tailslices[$tailindex] -NoNewline
-            }
-        }
         $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $positionoffset), ($origpos.Y + ($slices.indexOf($slice))))   
         Write-Host $slice -NoNewline
     }
