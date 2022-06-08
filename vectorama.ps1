@@ -5,10 +5,6 @@ param(
     [ValidateRange(0, 7)]
     $tailcopies = 0
 )
-if ($host.UI.RawUI.MaxPhysicalWindowSize.Width -lt 324 -or $host.UI.RawUI.MaxPhysicalWindowSize.Height -lt 70) {
-    Write-Error "Output requires at least 324x70 characters window!"
-    exit
-}
 if ($host.UI.RawUI.WindowSize.Width -lt 324 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
     $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (324, 70)
     $host.UI.RawUI.BufferSize = $newsize
