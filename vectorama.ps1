@@ -1,14 +1,16 @@
 [CmdletBinding()]
 param()
 if ($host.UI.RawUI.WindowSize.Width -lt 324 -or $host.UI.RawUI.WindowSize.Height -lt 70) {
-    $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (324, 70)
-    $host.UI.RawUI.BufferSize = $newsize
-    $host.UI.RawUI.WindowSize = $newsize
+    try {
+        $newsize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList (324, 70)
+        $host.UI.RawUI.BufferSize = $newsize
+        $host.UI.RawUI.WindowSize = $newsize
+    }
+    catch {}
     if ($null -ne $env:WT_SESSION) {
         # Windows Terminal - don't want to touch
         Write-Error "Detected Windows Terminal session and too small window!"
-        Write-Host "`nOutput requires at least 324x75 characters window, please resize it manually. Your current window is:"
-        $host.UI.RawUI.WindowSize
+        Write-Host "`nOutput requires at least 324x75 characters window, please resize it manually. Your current window is: $($host.UI.RawUI.WindowSize.Width)x$($host.UI.RawUI.WindowSize.Height)"
         exit
     }
 }
@@ -194,10 +196,10 @@ $vectologo = Get-Base64GZipString $starter
 Write-Verbose "Reading ender"
 $reminder = Get-Base64GZipString $ender
 
-$globaloffsetX = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Width - 324)/2)
-$globaloffsetY = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Height - 70)/2)+1
+$globaloffsetX = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Width - 324) / 2)
+$globaloffsetY = [System.Math]::Floor(($host.ui.RawUI.WindowSize.Height - 70) / 2) + 1
 $vectoslices = $vectologo -split "`n"
-Foreach($slice in $vectoslices){
+Foreach ($slice in $vectoslices) {
     $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.indexOf($slice) + $globaloffsetY + 1 ))
     Write-host $slice -NoNewline
 }
@@ -248,8 +250,8 @@ Clear-Host
 Start-Sleep -Milliseconds 200
 
 $reminderslices = $reminder -split "`n"
-Foreach($slice in $reminderslices){
-    $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX+64, ($reminderslices.indexOf($slice) + $globaloffsetY + 8 ))
+Foreach ($slice in $reminderslices) {
+    $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX + 64, ($reminderslices.indexOf($slice) + $globaloffsetY + 8 ))
     Write-host $slice -NoNewline
 }
 
