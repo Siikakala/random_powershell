@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-Keep account of Faérunian calendar. Mainly helper script for Touch Portal
+Keep account of Harptos calendar. Mainly helper script for Touch Portal
 
 .DESCRIPTION
-I wrote the script for my own use, to get the calendar info visible to Touch Portal.
+I wrote the script for my own use, to get the Faerûn calendar info visible to Touch Portal.
 
 When changing or setting date, script doesn't produce any output as that's the intended invocation from touch portal.
 Instead it will write the info to text file, of which is defined in the parameters. It can handle fancier Waterdeep styled
@@ -46,7 +46,7 @@ Useful when debugging without Touch Portal. Will output the file contents to pro
 Just get the current date. Supports WaterdeepFlavour - so you can easily see the difference
 
 .EXAMPLE
-.\FaerunCalendarTracker.ps1
+.\FaerunCalendarTracker.ps1 -Current
 Get the current date info
 
 .EXAMPLE
@@ -67,10 +67,10 @@ Add one minute to the current date, and write the output elaboratively. Note: Sc
 .\FaerunCalendarTracker.ps1 -day "+1"
 Add one day to the current date. Note: Script will not produce any output to the screen!
 #>
-[CmdletBinding(DefaultParameterSetName = "Get")]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "Set")]
-    [ValidatePattern("(?<Date>(?<Year>\d{1,4})(-(?<Month>[012]{0,1}\d{1})-(?<Day>[0123]{0,1}\d{1})|([ ]?(?<SpecialDay>[[:alpha:][:punct:][:space:]]*))))[ ]?(?<Time>(?<Hour>[0123]{0,1}\d):(?<Minute>[0-5]\d))?")] 
+    [ValidatePattern("(?<Date>(?<Year>[-]?\d{1,4})(-(?<Month>[012]{0,1}\d{1})-(?<Day>[0123]{0,1}\d{1})|([ ]?(?<SpecialDay>[[:alpha:][:punct:][:space:]]*))))[ ]?(?<Time>(?<Hour>[0123]{0,1}\d):(?<Minute>[0-5]\d))?")] 
     [String]
     $Date,
     [Parameter(Mandatory = $false, ParameterSetName = "Adjust")]
@@ -120,6 +120,9 @@ else {
 }
 
 Write-Verbose "Initializing variables"
+
+# Used as [ref]
+$test = $false
 
 # There's no 0th month, so setting it empty
 $MonthArray = @("", "Hammer", "Alturiak", "Ches", "Tarsakh", "Mirtul", "Kythorn", "Flamerule", "Eleasis", "Eleint", "Marpenoth", "Uktar", "Nightal")
@@ -192,12 +195,26 @@ Function New-FaerunDateHash {
     $RegexSpecialDays = $ValueArray -join "|"
     
     Write-Verbose "FUNC: Parsing date with Regex"
-    # Utilizing automatic $Matches variable. Setting output to null as this regex is identical to the ValidatePattern. I'm using "week", whereas in Faérun people would call it tenday
-    $Date -match "(?<Date>(?<Year>\d{1,4})(-(?<Month>[012]{0,1}\d{1})-(?<Day>[0123]{0,1}\d{1})|([ ]?(?<SpecialDay>$($RegexSpecialDays)))))[ ]?(?<Time>(?<Hour>[0123]?\d):(?<Minute>[0-5]?\d))?" | Out-Null
+    # Utilizing automatic $Matches variable. Setting output to null as this regex is identical to the ValidatePattern. I'm using "week", whereas Faerûnian would call it tenday
+    $Date -match "(?<Date>(?<Year>[-]?\d{1,4})(-(?<Month>[012]{0,1}\d{1})-(?<Day>[0123]{0,1}\d{1})|([ ]?(?<SpecialDay>$($RegexSpecialDays)))))[ ]?(?<Time>(?<Hour>[0123]?\d):(?<Minute>[0-5]?\d))?" | Out-Null
     Write-Debug "Matches:`n$($Matches | Out-String)"
     if ($null -ne $Matches.Date) {
         Write-Verbose "FUNC: Found date '$($Matches.Date)', parsing data"
-        $LeapYear = [DateTime]::IsLeapYear($Matches.Year)
+        Write-Verbose "FUNC: Converting year to positive integer for leap year checking"
+        $intyear = $false
+        if ([System.Int32]::TryParse($Matches.Year, [ref]$intyear)) {
+            if ($intyear -lt 0) {
+                Write-Verbose "      Negative year, converting"
+                $intyear = $intyear * -1
+            }
+        }
+        if ($intyear -eq 0) {
+            Write-Verbose "      Year 0, setting leap year to false"
+            $LeapYear = $false
+        }
+        else {
+            $LeapYear = [DateTime]::IsLeapYear($intyear)
+        }
         if ($null -ne $Matches.SpecialDay) {
             $Special = $true
             $Day = (Get-Culture).TextInfo.ToTitleCase($Matches.SpecialDay)
@@ -287,7 +304,7 @@ Function New-FaerunDateHash {
                 $DateHash.Week--
             }
             $DateHash.MonthName = $MonthArray[$Matches.Month]
-            $DateHash.ShortDate = "$(if($null -ne $DateHash.TimeOfDay){"$($DateHash.TimeOfDay) ($($DateHash.Hour):$($DateHash.Minute)).`n"})$($DateHash.Day)$(switch($DateHash.Day){1 {"st"} 2 {"nd"} 3 {"rd"} default {"th"}}) $($DateHash.MonthName) $($DateHash.Year) DR$(if($null -ne $DateHash.Festival){"`n$($DateHash.Festival)"})"
+            $DateHash.ShortDate = "$(if($null -ne $DateHash.TimeOfDay){"$($DateHash.TimeOfDay) ($($DateHash.Hour):$($DateHash.Minute))`n"})$($DateHash.Day)$(switch($DateHash.Day){1 {"st"} 2 {"nd"} 3 {"rd"} default {"th"}}) $($DateHash.MonthName) $($DateHash.Year) DR$(if($null -ne $DateHash.Festival){"`n$($DateHash.Festival)"})"
             if ($WaterdeepFlavour.IsPresent) {
                 # ..Yeah, inline madness, should be somewhat readable still though.
                 $DateHash.LongDate = "$(if($null -ne $DateHash.TimeOfDay){"It's $($DateHash.TimeOfDay). "})The day of $($WaterdeepWeekdayNames[$DateHash.WeekDay]) ($($DateHash.WeekDay)$(switch($DateHash.Weekday){1 {"st"} 2 {"nd"} 3 {"rd"} default {"th"}}), $($WaterdeepWeekdayGods[$DateHash.WeekDay])) of $(switch($DateHash.Week){1 {"first"} 2 {"second"} 3 {"third"}}) tenday of $($DateHash.MonthName) of the year of $($RollOfYears.($DateHash.Year)).$(if($null -ne $DateHash.Festival){" It is $($DateHash.Festival) festival."})"
@@ -299,7 +316,7 @@ Function New-FaerunDateHash {
         }
         else {
             $DateHash.LongDate = "$(if($null -ne $DateHash.TimeOfDay){"It's $($DateHash.TimeOfDay). "})The $($DateHash.Day) of the year of $($RollOfYears.($DateHash.Year))."
-            $DateHash.ShortDate = "$(if($null -ne $DateHash.TimeOfDay){"$($DateHash.TimeOfDay) ($($DateHash.Hour):$($DateHash.Minute)).`n"})The $($DateHash.Day) $($DateHash.Year) DR"
+            $DateHash.ShortDate = "$(if($null -ne $DateHash.TimeOfDay){"$($DateHash.TimeOfDay) ($($DateHash.Hour):$($DateHash.Minute))`n"})The $($DateHash.Day) $($DateHash.Year) DR"
             $DateHash.Normalized = "$($DateHash.Year) $($DateHash.Day) $($DateHash.Hour):$($DateHash.Minute)"
         }
         Write-Verbose "FUNC: Parsed date:`nLong date:`n  $($DateHash.LongDate)`nShort date:`n  $($DateHash.ShortDate)"
@@ -380,8 +397,8 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
         $DateHash = New-FaerunDateHash -Date $Split[1].trim() -WaterdeepFlavour:$WaterdeepFlavour.IsPresent
     }
     if ($Mode -eq "Set") {
-        if ($null -eq $Day -and ($Day.GetType().Name -eq "String" -and $null -eq $Month) -and $null -eq $Year) {
-            Write-Error -Message "No previus data and mandatory parameters for setting date are missing. Please enter -Day, -Month and -Year or use -Date" -ErrorAction Stop
+        if ($null -eq $Day -and ([System.Int32]::TryParse($Day, [ref]$test) -eq $true -and $null -eq $Month) -and $null -eq $Year) {
+            Write-Error -Message "No previus data and mandatory parameters for setting date are missing. Please use -Date" -ErrorAction Stop
             exit
         }
         if ($null -eq $Hour) {
@@ -392,7 +409,7 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
             Write-Verbose "Setting date in adjust mode - Minute null, defaulting to 0"
             $Minute = 0
         }
-        if ($Day.GetType().Name.Substring(0, 3) -eq "Int") {
+        if ([System.Int32]::TryParse($Day, [ref]$test)) {
             $QueryDate = "$Year-$Month-$Day ${Hour}:$Minute"
         }
         else {
@@ -424,11 +441,17 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
     if (-not [System.String]::IsNullOrEmpty($Month)) {
         Write-Verbose "Adding $Month months"
         # As all months are 30 days, and we are interested in relative change & handling special days separately, this is the way to go
-        $reference = $reference.AddDays($Month*30)
+        $intmonth = $false
+        if ([System.Int32]::TryParse($Month, [ref]$intmonth)) {
+            $reference = $reference.AddDays($intmonth * 30)
+        }
     }
     if (-not [System.String]::IsNullOrEmpty($Year)) {
         Write-Verbose "Adding $Year years"
-        $reference = $reference.AddYears($Year)
+        $intyear = $false
+        if ([System.Int32]::TryParse($Year, [ref]$intyear)) {
+            $reference = $reference.AddDays($intyear * 365)
+        }
     }
 
     # Calculate the relative change
@@ -468,8 +491,22 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
     # Check if the year changed
     $NewYear = $DateHash.Year
     while ($PreliminaryDayInYear -gt 365) {
-        Write-Verbose "More than 365 days."
-        if ($PreliminaryDayInYear -eq 366 -and [DateTime]::IsLeapYear($NewYear) -eq $true) {
+        Write-Verbose "Current day more than 365."
+        $intyear = $false
+        if ([System.Int32]::TryParse($NewYear, [ref]$intyear)) {
+            if ($intyear -lt 0) {
+                Write-Verbose "  Negative year, converting"
+                $intyear = $intyear * -1
+            }
+        }
+        if ($intyear -eq 0) {
+            Write-Verbose "  Year 0, setting leap year to false"
+            $LeapYear = $false
+        }
+        else {
+            $LeapYear = [DateTime]::IsLeapYear($intyear)
+        }
+        if ($PreliminaryDayInYear -eq 366 -and $LeapYear -eq $true) {
             Write-Verbose "366 days on a leap year - breaking the loop."
             break
         }
@@ -481,8 +518,23 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
         }
     }
     while ($PreliminaryDayInYear -lt 1) {
-        Write-Verbose "Less than 1 day."
-        if ($PreliminaryDayInYear -eq 366 -and [DateTime]::IsLeapYear($NewYear) -eq $true) {
+        Write-Verbose "Current day less than 1. Handling leap year check"
+        $intyear = $false
+        if ([System.Int32]::TryParse($NewYear, [ref]$intyear)) {
+            if ($intyear -lt 0) {
+                Write-Verbose "  Negative year, converting"
+                $intyear = $intyear * -1
+            }
+        }
+        if ($intyear -eq 0) {
+            Write-Verbose "  Year 0, setting leap year to false"
+            $LeapYear = $false
+        }
+        else {
+            Write-Verbose "Checking if $intyear is leap year"
+            $LeapYear = [DateTime]::IsLeapYear($intyear)
+        }
+        if ($PreliminaryDayInYear -eq 366 -and $LeapYear -eq $true) {
             Write-Verbose "366 days on a leap year - breaking the loop."
             break
         }
@@ -494,10 +546,26 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
         }
     }
 
+    $intyear = $false
+    if ([System.Int32]::TryParse($NewYear, [ref]$intyear)) {
+        if ($intyear -lt 0) {
+            Write-Verbose "Negative year, converting leap year variable"
+            $intyear = $intyear * -1
+        }
+    }
+    if ($intyear -eq 0) {
+        Write-Verbose "Year 0, setting leap year to false"
+        $LeapYear = $false
+    }
+    else {
+        Write-Verbose "Checking if $intyear is leap year and setting LeapYear variable"
+        $LeapYear = [DateTime]::IsLeapYear($intyear)
+    }
+
     # Did we land on special day?
     $WasSpecialDay = $false
     if ($SpecialDays.values.day -contains $PreliminaryDayInYear) {
-        if ($SpecialDays.Shieldmeet.day -eq $PreliminaryDayInYear -and [DateTime]::IsLeapYear($NewYear) -eq $false) {
+        if ($SpecialDays.Shieldmeet.day -eq $PreliminaryDayInYear -and $LeapYear -eq $false) {
             Write-Verbose "Shieldmeet but not a leap year, continuing."
         }
         else {
@@ -512,7 +580,7 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
         $SpecialDays.Keys | ForEach-Object {
             # Because of that damn leap day, each day shifts by one after Midsummer if it's not leap year. That's why less or equal
             if ($Specialdays.$_.Day -le $PreliminaryDayInYear) {
-                if ($_ -eq "Shieldmeet" -and [DateTime]::IsLeapYear($NewYear) -ne $true) {
+                if ($_ -eq "Shieldmeet" -and $LeapYear -ne $true) {
                     Write-Verbose "Not a leap year, ignoring Shieldmeet"
                 }
                 else {
@@ -532,7 +600,7 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
         }
         Write-Verbose "Day: $NewDay, Month: $NewMonth"
     }
-    if ($NewDay.GetType().Name.Substring(0, 3) -eq "Int") {
+    if ([System.Int32]::TryParse($NewDay, [ref]$test)) {
         $QueryDate = "$NewYear-$NewMonth-$NewDay ${NewHour}:$NewMinute"
     }
     else {
