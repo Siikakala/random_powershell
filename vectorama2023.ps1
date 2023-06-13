@@ -32,16 +32,6 @@ do {
 
     Clear-Host
 
-    Function Get-Base64GZipString {
-        param($in)
-        $data = [System.Convert]::FromBase64String($in)
-        $ms = New-Object System.IO.MemoryStream
-        $ms.Write($data, 0, $data.Length)
-        $ms.Seek(0, 0) | Out-Null
-        $sr = New-Object System.IO.StreamReader(New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Decompress))
-        return $sr.ReadToEnd()
-    }
-
     Function Write-Debug {
         param($Message)
         $old = $host.ui.RawUI.CursorPosition
@@ -109,10 +99,8 @@ do {
             $sliceindex = $nyancatslices.indexOf($slice)
             $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $nyanpositionoffset), ($origpos.Y + $sliceindex))
             Write-Host $slice -NoNewline
-            #if ($sliceindex -gt 3) {
             $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new(($origpos.X + $nakkivenepositionoffset), ($origpos.Y + $sliceindex - 8))
             Write-Host $nakkiveneslices[$sliceindex + $veneoffset + 1] -NoNewline
-            #}
         }
 
         $frametime = $framesyncstopwatch.ElapsedMilliseconds
@@ -129,7 +117,6 @@ do {
         $currentframe++
         $cumulatedframes++
     }
-    #<#
     Clear-Host
     Start-Sleep -Milliseconds 200
 
@@ -137,7 +124,6 @@ do {
         $host.ui.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX + 38, ($reminderslices.indexOf($slice) + $globaloffsetY + 38 ))
         Write-Host $slice -NoNewline
     }
-    # #>
 
     Start-Sleep -Seconds $AnimationSeconds
     [console]::CursorVisible = $true
