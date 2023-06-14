@@ -109,8 +109,8 @@ do {
         $currentfps = ($currentfps * $FPSSmoothingFactor) + (1000 / ($frametime + $framesyncmillis) * (1 - $FPSSmoothingFactor))
         $fpsrounded = [System.Math]::Round($currentfps, $FPSDigits)
         $syncmillisrounded = [System.Math]::Round($framesyncmillis, 0)
-        $elapsedSeconds = [System.Math]::Round(($AnimationTimer.Elapsed).TotalSeconds, 2)
-        Write-Debug "FPS: Current: $fpsrounded ; Target $TargetFPS | Framesync delay: $syncmillisrounded ms | Timer: $elapsedSeconds s   "
+        $remainingSeconds = [System.Math]::Round($AnimationSeconds - ($AnimationTimer.Elapsed).TotalSeconds, 2)
+        Write-Debug "FPS: Current: $fpsrounded ; Target $TargetFPS | Framesync delay: $syncmillisrounded ms | Timer: $remainingSeconds s   "
         if ($syncmillisrounded -gt 0) {
             Start-Sleep -Milliseconds $syncmillisrounded
         }
@@ -125,6 +125,10 @@ do {
         Write-Host $slice -NoNewline
     }
 
-    Start-Sleep -Seconds $AnimationSeconds
+    $AnimationTimer.Restart()
+    while ($AnimationTimer.ElapsedMilliseconds -lt ($AnimationSeconds * 1000)) {
+        $remainingSeconds = [System.Math]::Round($AnimationSeconds - ($AnimationTimer.Elapsed).TotalSeconds, 2)
+        Write-Debug "FPS: Current: 0 ; Target $TargetFPS | Framesync delay: - ms | Timer: $remainingSeconds s   "
+    }
     [console]::CursorVisible = $true
 }while ($InfiniteLoop.IsPresent)
