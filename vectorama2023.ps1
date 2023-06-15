@@ -69,7 +69,6 @@ do {
     }
     #Start-Sleep -Seconds 2
 
-    $offset = 0
     $origpos = [System.Management.Automation.Host.Coordinates]::new($globaloffsetX, ($vectoslices.count + $globaloffsetY - 25))
     $nakkivenepositionoffset = 181
     $padding = -50
@@ -84,12 +83,12 @@ do {
     while ($AnimationTimer.ElapsedMilliseconds -lt ($AnimationSeconds * 1000)) {
         $framesyncstopwatch.Restart()
         if ($currentframe -ge 12) {
-            $currentframe = 0
+            $currentframe = 1
         }
         $host.ui.RawUI.CursorPosition = $origpos
 
-        $nyancatslices = $nyancatframes[($currentframe + $offset)] -split "`n"
-        if ($currentframe -gt 6) {
+        $nyancatslices = $nyancatframes[$currentframe] -split "`n"
+        if ($currentframe -ge 6) {
             $veneoffset = 0
         }
         else {
@@ -129,6 +128,7 @@ do {
     while ($AnimationTimer.ElapsedMilliseconds -lt ($AnimationSeconds * 1000)) {
         $remainingSeconds = [System.Math]::Round($AnimationSeconds - ($AnimationTimer.Elapsed).TotalSeconds, 2)
         Write-Debug "FPS: Current: 0 ; Target $TargetFPS | Framesync delay: - ms | Timer: $remainingSeconds s   "
+        Start-Sleep -Milliseconds 10
     }
     [console]::CursorVisible = $true
 }while ($InfiniteLoop.IsPresent)
