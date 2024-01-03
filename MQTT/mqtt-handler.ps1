@@ -1,7 +1,14 @@
 [CmdletBinding()]
 param(
-    $ComputerName = "tennoji"
+    $ComputerName = "tennoji",
+    [switch]
+    $Confirm
 )
+[console]::TreatControlCAsInput = $true
+if ($DebugPreference -eq "Inquire" -and -not $Confirm.IsPresent) {
+    # -Debug present but -Confirm is not, suppress debug confirmations
+    $DebugPreference = "Continue"
+}
 
 if (-not (Test-Path C:\mqttx\mqttx.exe)) {
     Write-Error "mqttx cli client not found from path C:\mqttx\mqttx.exe. Please download from https://mqttx.app/cli#download"
@@ -20,6 +27,7 @@ $functions = {
         Import-Module Voicemeeter
         $vmr = Connect-Voicemeeter -Kind "potato"
         $arg = $payload.args
+        $return = $null
         switch ($payload.command.trim()) {
             "SwitchMode" {
                 switch ($arg.Mode) {
@@ -66,8 +74,17 @@ $functions = {
                     $vmr.($arg.type)[$arg.index].FadeTo($arg.level, 200)
                 }
             }
+            "GetVolume" {
+                if ($null -ne $arg.index -and $null -ne $arg.type) {
+                    # See explanation above, though this is requesting info, not setting it. Slider value is returned in 'gain' property
+                    $return = ($vmr.($arg.type)[$arg.index]).gain
+                }
+            }
         }
         Disconnect-Voicemeeter
+        if ($null -ne $return) {
+            return $return
+        }
     }
 }
 $invokes = {
@@ -95,7 +112,7 @@ $invokes = {
                     $payload = $data.payload
                 }
                 if (-not [string]::IsNullOrWhiteSpace($payload)) {
-                    Write-Output "Message to topic $($data.topic):`n$(($payload | Format-List | Out-String).Trim())`n"
+                    Write-Output "- Message to topic $($data.topic):`n$(($payload | Format-List | Out-String).Trim())"
                     switch ($data.topic) {
                         "$ComputerName/control" {
                             Write-Output "- Calling Invoke-GeneralControl as job"
@@ -120,13 +137,57 @@ $invokes = {
             $functions,
             $ComputerName
         )
+        Invoke-Expression $functions
         $conf = Get-Content c:\mqttx\mqttx-cli-config.json -Raw | ConvertFrom-Json
+        $stopwatch = [System.Diagnostics.Stopwatch]::new()
+        $previousA1Level = -60
         while ($true) {
-            Write-Output "Sending heartbeat to MQTT"
-            c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss")
-            for ($i = 0; $i -lt 300; $i++) {
-                # Stop-job takes freaking forever if Start-Sleep -Seconds 300 is used.
-                Start-Sleep -Seconds 1
+            for ($i = 0; $i -lt 150; $i++) {
+                # Extremely hack-y way of doing things in intervals but whatever, I regret nothing! x)
+                # One complete while($true) loop takes 5 mintes, and these actions are taken in roughly once per two secnds. Different actions during it takes a bit of time so using
+                # stopwatch and 2 second "offset" in milliseconds to adjust the sleep time at the end
+                $stopwatch.Restart()
+                $offset = 2000
+                if ($i -eq 0) {
+                    #This happens once in 5 minutes
+                    Write-Output "Sending heartbeat to MQTT"
+                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss")
+                    # This takes roughly a second so adjusting offset accordingly
+                    $offset -= 800
+                }
+
+                if ($i % 30 -eq 0) {
+                    # This happens once a minute
+                    Write-Output "Requesting current A1 level from Voicemeeter"
+                    $call = @{
+                        command = "GetVolume"
+                        args    = @{
+                            type  = "bus"
+                            index = 0
+                        }
+                    }
+
+                    # Voicemeeter API is annoying in a sense that you can't re-connect to the API in the same session once you disconnect. So, starting new job every time by using child job
+                    $VCCall = Start-Job -ScriptBlock { Invoke-Expression $using:functions; Invoke-VoicemeeterControl $using:call } -ArgumentList $functions, $call
+                    while($VCCall.State -eq "Running"){
+                        Start-Sleep -Milliseconds 100
+                    }
+                    $A1Level = Receive-Job $VCCall
+                    Remove-Job $VCCall
+                    if ($A1Level -ne $previousA1Level) {
+                        Write-Output "Sending MQTT message '$A1Level' to topic '$Computername/status/sound/A1Level'"
+                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/status/sound/A1Level" -m $A1Level
+                        $previousA1Level = $A1Level
+                    }
+                }
+
+                # Sleep handling
+                $stopwatch.Stop()
+                $offset -= $stopwatch.ElapsedMilliseconds
+                Write-Debug "  [$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: loop $i, sleeping ${offset}ms"
+                if ($offset -gt 0) {
+                    Start-Sleep -Milliseconds $offset
+                }
             }
         }
     }
@@ -137,16 +198,28 @@ $ChildJobs = @{
 }
 
 Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting main thread"
+$ctrlc = $false
 while ($true) {
+    if ([console]::KeyAvailable) {
+        $key = [system.console]::readkey($true)
+        if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C")) {
+            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Ctrl-C pressed, starting clean-up"
+            $ctrlc = $true
+            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Stopping child jobs"
+            Stop-Job $ChildJobs.Receiver
+            Stop-Job $ChildJobs.Sender
+            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Receiving child job outputs for the last time"
+        }
+    }
     $msgs = ""
     # Check and process child job messages
-    if ($ChildJobs.Receiver.State -ne "Running") {
+    if ($ChildJobs.Receiver.State -ne "Running" -and $ctrlc -eq $false) {
         Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting listener thread"
-        $ChildJobs.Receiver = Start-Job -Name "MQTTReceiver" -ScriptBlock { Invoke-Listener -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName
+        $ChildJobs.Receiver = Start-Job -Name "MQTTReceiver" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Listener -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
     }
-    if ($ChildJobs.Sender.State -ne "Running") {
+    if ($ChildJobs.Sender.State -ne "Running" -and $ctrlc -eq $false) {
         Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting sender thread"
-        $ChildJobs.Sender = Start-Job -Name "MQTTSender" -ScriptBlock { Invoke-Sender -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName
+        $ChildJobs.Sender = Start-Job -Name "MQTTSender" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Sender -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
     }
     if ($ChildJobs.Receiver.HasMoreData) {
         $msgs = ($ChildJobs.Receiver | Receive-Job) -split "`n"
@@ -160,5 +233,15 @@ while ($true) {
             Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: $msg"
         }
     }
-    Start-Sleep -Seconds 1
+
+    if ($ctrlc -and ($ChildJobs.Receiver.State -eq "Stopped" -and $ChildJobs.Receiver.HasMoreData -eq $false) -and ($ChildJobs.Sender.State -eq "Stopped" -and $ChildJobs.Sender.HasMoreData -eq $false)) {
+        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Removing child jobs and breaking main thread"
+        Get-Job -Name MQTTReceiver | Remove-Job
+        Get-Job -Name MQTTSender | Remove-Job
+        break
+    }
+    # Rather tight loop for ctrl-c handling
+    Start-Sleep -Milliseconds 100
 }
+Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Clean-up complete, exit."
+exit 0
