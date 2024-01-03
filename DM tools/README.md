@@ -1,7 +1,7 @@
 # DM tools
 Here lies scripts for easier DMing
 ## FaerunCalendarTracker
-You can keep track of time with this script. It's mainly meant to be companion script for TouchPortal, hence, it doesn't produce output without -Passthru
+You can keep track of time with this script. It's mainly meant to be companion script for TouchPortal, hence, it doesn't produce output without `-Passthru`
 It can handle more fancy Waterdeep-flavoured output too. Please see `Get-Help .\FaerunCalendarTracker.ps -Detailed` for details but as an example:
 ```
   -------------------------- EXAMPLE 2 --------------------------
