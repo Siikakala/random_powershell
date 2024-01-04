@@ -152,8 +152,6 @@ $invokes = {
                     #This happens once in 5 minutes
                     Write-Output "Sending heartbeat to MQTT"
                     c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss")
-                    # This takes roughly a second so adjusting offset accordingly
-                    $offset -= 800
                 }
 
                 if ($i % 30 -eq 0) {
