@@ -93,6 +93,7 @@ $invokes = {
             $functions,
             $ComputerName
         )
+        $threadstarted = Get-Date
         Write-Output "Connecting to MQTT"
         C:\mqttx\mqttx.exe sub --config C:\mqttx\mqttx-cli-config.json | ForEach-Object -Process {
             # The json object is pretty printed and pipe is consuming the data row-per-row so gather the whole message first
@@ -127,6 +128,10 @@ $invokes = {
                         }
                     }
                 }
+                if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
+                    Write-Output "Thread age over a day - trying to quit."
+                    break
+                }
             }
         }
         Write-Output "Disconnected - waiting for 5s before returning to main thread"
@@ -139,19 +144,20 @@ $invokes = {
         )
         Invoke-Expression $functions
         $conf = Get-Content c:\mqttx\mqttx-cli-config.json -Raw | ConvertFrom-Json
+        $threadstarted = Get-Date
         $stopwatch = [System.Diagnostics.Stopwatch]::new()
         $previousA1Level = -60
-        while ($true) {
+        :outer while ($true) {
             for ($i = 0; $i -lt 150; $i++) {
                 # Extremely hack-y way of doing things in intervals but whatever, I regret nothing! x)
                 # One complete while($true) loop takes 5 mintes, and these actions are taken in roughly once per two secnds. Different actions during it takes a bit of time so using
                 # stopwatch and 2 second "offset" in milliseconds to adjust the sleep time at the end
                 $stopwatch.Restart()
                 $offset = 2000
-                if ($i -eq 0) {
-                    #This happens once in 5 minutes
+                if ($i % 10 -eq 0) {
+                    #This happens once in 10 seconds
                     Write-Output "Sending heartbeat to MQTT"
-                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss")
+                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") | Out-Null
                 }
 
                 if ($i % 30 -eq 0) {
@@ -167,14 +173,14 @@ $invokes = {
 
                     # Voicemeeter API is annoying in a sense that you can't re-connect to the API in the same session once you disconnect. So, starting new job every time by using child job
                     $VCCall = Start-Job -ScriptBlock { Invoke-Expression $using:functions; Invoke-VoicemeeterControl $using:call } -ArgumentList $functions, $call
-                    while($VCCall.State -eq "Running"){
+                    while ($VCCall.State -eq "Running") {
                         Start-Sleep -Milliseconds 100
                     }
                     $A1Level = Receive-Job $VCCall
                     Remove-Job $VCCall
                     if ($A1Level -ne $previousA1Level) {
                         Write-Output "Sending MQTT message '$A1Level' to topic '$Computername/status/sound/A1Level'"
-                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/status/sound/A1Level" -m $A1Level
+                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/status/sound/A1Level" -m $A1Level | Out-Null
                         $previousA1Level = $A1Level
                     }
                 }
@@ -182,9 +188,15 @@ $invokes = {
                 # Sleep handling
                 $stopwatch.Stop()
                 $offset -= $stopwatch.ElapsedMilliseconds
-                Write-Debug "  [$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: loop $i, sleeping ${offset}ms"
-                if ($offset -gt 0) {
-                    Start-Sleep -Milliseconds $offset
+                if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
+                    Write-Output "Thread age over a day - breaking out to free resources."
+                    break outer
+                }
+                else {
+                    Write-Debug "  [$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: loop $i, sleeping ${offset}ms"
+                    if ($offset -gt 0) {
+                        Start-Sleep -Milliseconds $offset
+                    }
                 }
             }
         }
@@ -211,14 +223,6 @@ while ($true) {
     }
     $msgs = ""
     # Check and process child job messages
-    if ($ChildJobs.Receiver.State -ne "Running" -and $ctrlc -eq $false) {
-        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting listener thread"
-        $ChildJobs.Receiver = Start-Job -Name "MQTTReceiver" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Listener -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
-    }
-    if ($ChildJobs.Sender.State -ne "Running" -and $ctrlc -eq $false) {
-        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting sender thread"
-        $ChildJobs.Sender = Start-Job -Name "MQTTSender" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Sender -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
-    }
     if ($ChildJobs.Receiver.HasMoreData) {
         $msgs = ($ChildJobs.Receiver | Receive-Job) -split "`n"
         foreach ($msg in $msgs) {
@@ -231,6 +235,24 @@ while ($true) {
             Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: $msg"
         }
     }
+
+    if ($ChildJobs.Receiver.State -ne "Running" -and $ctrlc -eq $false) {
+        if($null -ne $ChildJobs.Receiver){
+            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Cleaning up previous listener thread"
+            $ChildJobs.Receiver | Remove-Job
+        }
+        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting listener thread"
+        $ChildJobs.Receiver = Start-Job -Name "MQTTReceiver" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Listener -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
+    }
+    if ($ChildJobs.Sender.State -ne "Running" -and $ctrlc -eq $false) {
+        if($null -ne $ChildJobs.Sender){
+            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Cleaning up previous sender thread"
+            $ChildJobs.Sender | Remove-Job
+        }
+        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting sender thread"
+        $ChildJobs.Sender = Start-Job -Name "MQTTSender" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Sender -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
+    }
+
 
     if ($ctrlc -and ($ChildJobs.Receiver.State -eq "Stopped" -and $ChildJobs.Receiver.HasMoreData -eq $false) -and ($ChildJobs.Sender.State -eq "Stopped" -and $ChildJobs.Sender.HasMoreData -eq $false)) {
         Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Removing child jobs and breaking main thread"
