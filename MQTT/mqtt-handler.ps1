@@ -155,7 +155,7 @@ $invokes = {
                 $stopwatch.Restart()
                 $offset = 2000
                 if ($i % 10 -eq 0) {
-                    #This happens once in 10 seconds
+                    #This happens once in 20 seconds
                     Write-Output "Sending heartbeat to MQTT"
                     c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") | Out-Null
                 }
