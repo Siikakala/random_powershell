@@ -48,6 +48,7 @@ $functions = {
         Import-Module Voicemeeter
         Write-Information "Connecting to Voicemeeter Potato - Thread enabled: $($threadconf.Enabled)"
         $vmr = Connect-Voicemeeter -Kind "potato"
+        $previousA1Level = -60
         while (($global:config).($global:thread).Enabled) {
             if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
                 if ($message.To -ne "Voicemeeter") {
@@ -55,9 +56,11 @@ $functions = {
                     $q.TryAdd($message)
                 }
                 else {
-                    $threadconf.DataWaiting = $false
+                    Write-Information "Received command $($message.payload.command)"
+                    if ($q.IsEmpty) {
+                        $threadconf.DataWaiting = $false
+                    }
                 }
-                Write-Information "Received command $($message.payload.command)"
                 $arg = $message.payload.args
                 $return = $null
                 switch ($message.payload.command.trim()) {
@@ -122,6 +125,21 @@ $functions = {
                             Payload = $return
                         })
                     $global:config.($message.From).DataWaiting = $true
+                }
+            }
+            else {
+                if ((Get-Date).Second % 2 -eq 0) {
+                    $A1Level = $vmr.bus[0].gain
+                    if ($A1Level -ne $previousA1Level) {
+                        Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
+                        $q.TryAdd([PSCustomObject]@{
+                                To      = "Sender"
+                                From    = "Voicemeeter"
+                                Payload = $A1Level
+                            })
+                        $global:config.Sender.DataWaiting = $true
+                        $previousA1Level = $A1Level
+                    }
                 }
             }
             Start-Sleep -Milliseconds 100
@@ -208,7 +226,7 @@ $functions = {
         $stopwatch = [System.Diagnostics.Stopwatch]::new()
         $previousA1Level = -60
         Write-Information "Starting sender thread - Thread enabled: $($threadconf.Enabled)"
-        :outer while (($global:config).($global:thread).Enabled) {
+        :outer while ($threadconf.Enabled) {
             for ($i = 0; $i -lt 150; $i++) {
                 # Extremely hack-y way of doing things in intervals but whatever, I regret nothing! x)
                 # One complete while($true) loop takes 5 mintes, and these actions are taken in roughly once per two secnds. Different actions during it takes a bit of time so using
@@ -227,7 +245,10 @@ $functions = {
                         $q.TryAdd($message)
                     }
                     else {
-                        $threadconf.DataWaiting = $false
+                        Write-Information "Received message from $($message.From)"
+                        if ($q.IsEmpty) {
+                            $threadconf.DataWaiting = $false
+                        }
                     }
                 }
                 if ($i % 30 -eq 0) {
