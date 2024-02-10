@@ -16,35 +16,67 @@ if (-not (Test-Path C:\mqttx\mqttx.exe)) {
 }
 
 $functions = {
+    param(
+        $thread,
+        $config,
+        $queue,
+        $ComputerName
+    )
     function Invoke-GeneralControl {
-        param($payload)
+        $q = $global:queue
+        $threadconf = ($global:config).($global:thread)
+        $message = $null
+        $threadstarted = Get-Date
+        switch ($payload.command) {
+            default {}
+        }
+    }
+    function Invoke-ProcessWatcher {
+        $q = $global:queue
+        $threadconf = ($global:config).($global:thread)
+        $message = $null
+        $threadstarted = Get-Date
         switch ($payload.command) {
             default {}
         }
     }
     function Invoke-VoicemeeterControl {
-        param($payload)
+        $q = $global:queue
+        $threadconf = ($global:config).($global:thread)
+        $message = $null
+        $threadstarted = Get-Date
         Import-Module Voicemeeter
+        Write-Information "Connecting to Voicemeeter Potato - Thread enabled: $($threadconf.Enabled)"
         $vmr = Connect-Voicemeeter -Kind "potato"
-        $arg = $payload.args
-        $return = $null
-        switch ($payload.command.trim()) {
-            "SwitchMode" {
-                switch ($arg.Mode) {
-                    "Speakers" {
-                        # This MacroButton's button loads Voicemeeter configuration with my M-Track ASIO driver as A1 output device, to which my speakers are connected to
-                        $vmr.button[11].state = $true
-                    }
-                    "Headphones" {
-                        # This MacroButton's button loads Voicemeeter configuration with my Bluetooth headphones as A1 output device. In the case headphones aren't connected,
-                        # Voicemeeter ends up in engine error state and lets go all wake locks for audio devices, potentially allowing computer to sleep
-                        $vmr.button[10].state = $true
-                    }
+        while ($threadconf.Enabled) {
+            if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
+                if ($message.To -ne "Voicemeeter") {
+                    Write-Information "Received message for another thread, pushing back to queue"
+                    $q.TryAdd($message)
                 }
-            }
-            "SetVolume" {
-                if ($null -ne $arg.index -and $null -ne $arg.type -and $null -ne $arg.level) {
-                    <#
+                else {
+                    $threadconf.DataWaiting = $false
+                }
+                Write-Information "Received command $($message.payload.command)"
+                $arg = $message.payload.args
+                $return = $null
+                switch ($message.payload.command.trim()) {
+                    "SwitchMode" {
+                        switch ($arg.Mode) {
+                            "Speakers" {
+                                # This MacroButton's button loads Voicemeeter configuration with my M-Track ASIO driver as A1 output device, to which my speakers are connected to
+                                $vmr.button[11].state = $true
+                            }
+                            "Headphones" {
+                                # This MacroButton's button loads Voicemeeter configuration with my Bluetooth headphones as A1 output device. In the case headphones aren't connected,
+                                # Voicemeeter ends up in engine error state and lets go all wake locks for audio devices, potentially allowing computer to sleep
+                                $vmr.button[10].state = $true
+                            }
+                        }
+                    }
+                    "SetVolume" {
+                        if ($null -ne $arg.index -and $null -ne $arg.type -and $null -ne $arg.level) {
+                            <#
                     # This looks *very* confusing, so let me break it out:
                     #
                     # $vmr = voicemeeter C API
@@ -71,30 +103,42 @@ $functions = {
                     # will be converted to this call:
                     # $vmr.bus[0].FadeTo(-27, 200)
                     # #>
-                    $vmr.($arg.type)[$arg.index].FadeTo($arg.level, 200)
+                            Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].FadeTo($($arg.level), 200)"
+                            $vmr.($arg.type)[$arg.index].FadeTo($arg.level, 200)
+                        }
+                    }
+                    "GetVolume" {
+                        if ($null -ne $arg.index -and $null -ne $arg.type) {
+                            # See explanation above, though this is requesting info, not setting it. Slider value is returned in 'gain' property
+                            Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].gain"
+                            $return = ($vmr.($arg.type)[$arg.index]).gain
+                        }
+                    }
+                }
+                if ($null -ne $return) {
+                    $q.TryAdd([PSCustomObject]@{
+                            To      = $message.From
+                            From    = "Voicemeeter"
+                            Payload = $return
+                        })
+                    $global:config.($message.From).DataWaiting = $true
                 }
             }
-            "GetVolume" {
-                if ($null -ne $arg.index -and $null -ne $arg.type) {
-                    # See explanation above, though this is requesting info, not setting it. Slider value is returned in 'gain' property
-                    $return = ($vmr.($arg.type)[$arg.index]).gain
-                }
+            Start-Sleep -Milliseconds 100
+            if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
+                Write-Information "Thread age over a day - trying to quit."
+                break
             }
         }
         Disconnect-Voicemeeter
-        if ($null -ne $return) {
-            return $return
-        }
     }
-}
-$invokes = {
     function Invoke-Listener {
-        param(
-            $functions,
-            $ComputerName
-        )
+        $com = $global:ComputerName
+        $q = $global:queue
+        $threadconf = ($global:config).($global:thread)
+        $payload = $null
         $threadstarted = Get-Date
-        Write-Output "Connecting to MQTT"
+        Write-Information "Connecting to MQTT - Thread enabled: $($threadconf.Enabled)"
         C:\mqttx\mqttx.exe sub --config C:\mqttx\mqttx-cli-config.json | ForEach-Object -Process {
             # The json object is pretty printed and pipe is consuming the data row-per-row so gather the whole message first
             $data = $null
@@ -113,56 +157,80 @@ $invokes = {
                     $payload = $data.payload
                 }
                 if (-not [string]::IsNullOrWhiteSpace($payload)) {
-                    Write-Output "- Message to topic $($data.topic):`n$(($payload | Format-List | Out-String).Trim())"
+                    Write-Information "Message to topic $($data.topic):`n$(($payload | Format-List | Out-String).Trim())"
                     switch ($data.topic) {
-                        "$ComputerName/control" {
-                            Write-Output "- Calling Invoke-GeneralControl as job"
-                            Start-Job -ScriptBlock { Invoke-Expression $using:functions; Invoke-GeneralControl $using:payload } -ArgumentList $functions, $payload | Out-Null
+                        "$com/control" {
+                            Write-Information "- Control, queuing payload"
+                            $q.TryAdd([PSCustomObject]@{
+                                    To      = "control"
+                                    From    = "Listener"
+                                    Payload = $payload
+                                })
                         }
-                        "$ComputerName/control/sound" {
-                            Write-Output "- Calling Invoke-VoicemeeterControl as job"
-                            Start-Job -ScriptBlock { Invoke-Expression $using:functions; Invoke-VoicemeeterControl $using:payload } -ArgumentList $functions, $payload | Out-Null
+                        "$com/control/sound" {
+                            Write-Information "- Voicemeeter, queuing payload"
+                            $q.TryAdd([PSCustomObject]@{
+                                    To      = "Voicemeeter"
+                                    From    = "Listener"
+                                    Payload = $payload
+                                })
+                            $global:config.Voicemeeter.DataWaiting = $true
                         }
-                        "$ComputerName/heartbeat" {
-                            Write-Output "- Heartbeat"
+                        "$com/heartbeat" {
+                            Write-Information "- Heartbeat"
                         }
                     }
                 }
-                if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
-                    Write-Output "Thread age over a day - trying to quit."
-                    break
+                else {
+                    Write-Information "Got unprocessable data:`n$data"
                 }
             }
+            if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
+                Write-Information "Thread age over a day - trying to quit."
+                break
+            }
+            if (-not $threadconf.Enabled) {
+                Write-Information "Exit requested - trying to quit."
+                break
+            }
         }
-        Write-Output "Disconnected - waiting for 5s before returning to main thread"
+        Write-Information "Disconnected - waiting for 5s before returning to main thread"
         Start-Sleep -Seconds 5
     }
     function Invoke-Sender {
-        param(
-            $functions,
-            $ComputerName
-        )
-        Invoke-Expression $functions
+        $com = $global:ComputerName
+        $q = $global:queue
+        $threadconf = ($global:config).($global:thread)
         $conf = Get-Content c:\mqttx\mqttx-cli-config.json -Raw | ConvertFrom-Json
         $threadstarted = Get-Date
         $stopwatch = [System.Diagnostics.Stopwatch]::new()
         $previousA1Level = -60
-        :outer while ($true) {
+        Write-Information "Starting sender thread - Thread enabled: $($threadconf.Enabled)"
+        :outer while ($threadconf.Enabled) {
             for ($i = 0; $i -lt 150; $i++) {
                 # Extremely hack-y way of doing things in intervals but whatever, I regret nothing! x)
                 # One complete while($true) loop takes 5 mintes, and these actions are taken in roughly once per two secnds. Different actions during it takes a bit of time so using
                 # stopwatch and 2 second "offset" in milliseconds to adjust the sleep time at the end
                 $stopwatch.Restart()
                 $offset = 2000
+                $message = $null
                 if ($i % 10 -eq 0) {
                     #This happens once in 20 seconds
-                    Write-Output "Sending heartbeat to MQTT"
-                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") | Out-Null
+                    Write-Information "Sending heartbeat to MQTT"
+                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") #| Out-Null
                 }
-
+                if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
+                    if ($message.To -ne "Sender") {
+                        Write-Information "Received message for another thread, pushing back to queue"
+                        $q.TryAdd($message)
+                    }
+                    else {
+                        $threadconf.DataWaiting = $false
+                    }
+                }
                 if ($i % 30 -eq 0) {
                     # This happens once a minute
-                    Write-Output "Requesting current A1 level from Voicemeeter"
+                    Write-Information "Requesting current A1 level from Voicemeeter"
                     $call = @{
                         command = "GetVolume"
                         args    = @{
@@ -170,18 +238,21 @@ $invokes = {
                             index = 0
                         }
                     }
-
-                    # Voicemeeter API is annoying in a sense that you can't re-connect to the API in the same session once you disconnect. So, starting new job every time by using child job
-                    $VCCall = Start-Job -ScriptBlock { Invoke-Expression $using:functions; Invoke-VoicemeeterControl $using:call } -ArgumentList $functions, $call
-                    while ($VCCall.State -eq "Running") {
-                        Start-Sleep -Milliseconds 100
+                    $q.TryAdd([PSCustomObject]@{
+                            To      = "Voicemeeter"
+                            From    = "Sender"
+                            Payload = $call
+                        })
+                    $global:config.Voicemeeter.DataWaiting = $true
+                }
+                if ($null -ne $message) {
+                    if ($message.Payload -ne $previousA1Level) {
+                        Write-Information "Sending MQTT message '$($message.Payload)' to topic '$com/status/sound/A1Level'"
+                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload #| Out-Null
+                        $previousA1Level = $message.Payload
                     }
-                    $A1Level = Receive-Job $VCCall
-                    Remove-Job $VCCall
-                    if ($A1Level -ne $previousA1Level) {
-                        Write-Output "Sending MQTT message '$A1Level' to topic '$Computername/status/sound/A1Level'"
-                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$ComputerName/status/sound/A1Level" -m $A1Level | Out-Null
-                        $previousA1Level = $A1Level
+                    else {
+                        Write-Information "A1 level stayed unchanged"
                     }
                 }
 
@@ -189,7 +260,7 @@ $invokes = {
                 $stopwatch.Stop()
                 $offset -= $stopwatch.ElapsedMilliseconds
                 if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
-                    Write-Output "Thread age over a day - breaking out to free resources."
+                    Write-Information "Thread age over a day - breaking out to free resources."
                     break outer
                 }
                 else {
@@ -201,67 +272,135 @@ $invokes = {
             }
         }
     }
+    Write-Information "Starting $thread - invoking $($config.$thread.Function)"
+    Invoke-Expression ($config.$thread.Function)
 }
+$pool = [runspacefactory]::CreateRunspacePool(1, 4)
+$pool.open()
 $ChildJobs = @{
-    Sender   = $null
-    Receiver = $null
+    Sender      = @{
+        instance = $null
+        handle   = $null
+    }
+    Receiver    = @{
+        instance = $null
+        handle   = $null
+    }
+    Voicemeeter = @{
+        instance = $null
+        handle   = $null
+    }
+    <#
+    ProcessWatcher = @{
+        instance = $null
+        handle   = $null
+    }
+    # #>
 }
 
-Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting main thread"
+$Config = [hashtable]::Synchronized(@{
+        Sender         = @{
+            Enabled     = $true
+            Function    = "Invoke-Sender"
+            DataWaiting = $false
+        }
+        Receiver       = @{
+            Enabled     = $true
+            Function    = "Invoke-Listener"
+            DataWaiting = $false
+        }
+        Voicemeeter    = @{
+            Enabled     = $true
+            Function    = "Invoke-VoicemeeterControl"
+            DataWaiting = $false
+        }
+        ProcessWatcher = @{
+            Enabled     = $true
+            Function    = "Invoke-ProcessWatcher"
+            DataWaiting = $false
+        }
+    })
+$Queue = [System.Collections.Concurrent.ConcurrentQueue[psobject]]::new()
+# Padding to center text into the placeholder
+$Padding = @{
+    Sender         = "    " #4
+    Receiver       = "   " #3
+    Voicemeeter    = " " #1
+    ProcessWatcher = ""
+    Main           = "     " #5
+}
+$TimeStamp = { (Get-Date).toString("yyyy-MM-dd HH:mm:ss") }
+$OutputTemplate = "[{0}][{1,-14}] {2}"
+#$Streams = @("Debug", "Error", "Information", "Verbose", "Warning")
+
+Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting main thread")
 $ctrlc = $false
 while ($true) {
     if ([console]::KeyAvailable) {
         $key = [system.console]::readkey($true)
         if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C")) {
-            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Ctrl-C pressed, starting clean-up"
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, starting clean-up")
             $ctrlc = $true
-            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Stopping child jobs"
-            Stop-Job $ChildJobs.Receiver
-            Stop-Job $ChildJobs.Sender
-            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Receiving child job outputs for the last time"
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop")
+            $ChildJobs.Keys | ForEach-Object { $Config.$_.Enabled = $false }
+            Start-Sleep -Seconds 1
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
+            $ChildJobs.Keys | ForEach-Object {
+                Write-Verbose ("{0,38}{1}" -f "", " - $_")
+                $ChildJobs.$_.instance.Dispose()
+            }
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
         }
     }
     $msgs = ""
     # Check and process child job messages
-    if ($ChildJobs.Receiver.HasMoreData) {
-        $msgs = ($ChildJobs.Receiver | Receive-Job) -split "`n"
-        foreach ($msg in $msgs) {
-            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))] LISTEN: $msg"
+    foreach ($thread in $ChildJobs.Keys) {
+        $infos = $false
+        $infos = $ChildJobs.$thread.instance.Streams.Information
+        if ($infos) {
+            $msgs = $infos -split "`n"
+            foreach ($msg in $msgs) {
+                Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", $msg)
+            }
         }
+        try {
+            $ChildJobs.$thread.instance.Streams.ClearStreams()
+        }
+        catch {}
     }
-    if ($ChildJobs.Sender.HasMoreData) {
-        $msgs = ($ChildJobs.Sender | Receive-Job) -split "`n"
-        foreach ($msg in $msgs) {
-            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: $msg"
+
+    foreach ($thread in $ChildJobs.Keys) {
+        if ($null -eq $ChildJobs.$thread.instance -or ($ChildJobs.$thread.instance.InvocationStateInfo.State.ToString() -ne "Running" -and $ctrlc -eq $false)) {
+            if ($null -ne $ChildJobs.$thread.instance.InvocationStateInfo.State) {
+                Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Cleaning up previous $thread thread")
+                $ChildJobs.$thread.instance.Dispose()
+            }
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting $thread thread")
+            $ChildJobs.$thread.instance = [powershell]::Create()
+            $ChildJobs.$thread.instance.RunspacePool = $pool
+            $ChildJobs.$thread.instance.AddScript($functions) | Out-Null
+            $argslist = @{
+                thread       = $thread
+                queue        = $queue
+                config       = $Config
+                ComputerName = $ComputerName
+            }
+            $ChildJobs.$thread.instance.AddParameters($argslist) | Out-Null
+            $ChildJobs.$thread.handle = $ChildJobs.$thread.instance.BeginInvoke()
         }
     }
 
-    if ($ChildJobs.Receiver.State -ne "Running" -and $ctrlc -eq $false) {
-        if($null -ne $ChildJobs.Receiver){
-            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Cleaning up previous listener thread"
-            $ChildJobs.Receiver | Remove-Job
+    if ($ctrlc) {
+        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Removing child threads and breaking main thread")
+        foreach ($thread in $ChildJobs.Keys) {
+            $ChildJobs.$thread.instance.Dispose()
         }
-        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting listener thread"
-        $ChildJobs.Receiver = Start-Job -Name "MQTTReceiver" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Listener -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
-    }
-    if ($ChildJobs.Sender.State -ne "Running" -and $ctrlc -eq $false) {
-        if($null -ne $ChildJobs.Sender){
-            Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Cleaning up previous sender thread"
-            $ChildJobs.Sender | Remove-Job
-        }
-        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Starting sender thread"
-        $ChildJobs.Sender = Start-Job -Name "MQTTSender" -ScriptBlock { $DebugPreference = $using:DebugPreference; Invoke-Sender -functions $using:functions -Computername $using:ComputerName } -InitializationScript $invokes -ArgumentList $functions, $ComputerName, $DebugPreference
-    }
-
-
-    if ($ctrlc -and ($ChildJobs.Receiver.State -eq "Stopped" -and $ChildJobs.Receiver.HasMoreData -eq $false) -and ($ChildJobs.Sender.State -eq "Stopped" -and $ChildJobs.Sender.HasMoreData -eq $false)) {
-        Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Removing child jobs and breaking main thread"
-        Get-Job -Name MQTTReceiver | Remove-Job
-        Get-Job -Name MQTTSender | Remove-Job
+        $pool.close()
+        $pool.Dispose()
         break
     }
     # Rather tight loop for ctrl-c handling
     Start-Sleep -Milliseconds 100
 }
-Write-Verbose "[$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   MAIN: Clean-up complete, exit."
+Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Clean-up complete, exit.")
 exit 0
