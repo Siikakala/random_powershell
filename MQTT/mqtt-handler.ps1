@@ -84,9 +84,9 @@ $functions = {
                     # $arg.index = index of the device, starting from 0. bus[0] = A1; strip[1] = second strip from the left
                     # $arg.level = level to which the method call will face to, in milliseconds defined in second parameter (=200ms)
                     #
-                    # Things in parenthesis before method call will be resolced first, so the string value of $arg.type will be
+                    # Things in parenthesis before method call will be resolved first, so the string value of $arg.type will be
                     # converted to point to specific array in the API, as it's type was string. Then the index will be populated to
-                    # select the object inside the array. The the FadeTo method of that object will be called with the level as first
+                    # select the object inside the array. Then the FadeTo method of that object will be called with the level as first
                     # parameter. Yes, this is slightly abusing the Powershell engine for greated modularity. It also depends on
                     # Voicemeeter's C API input sanitization as payload is passed directly to it. But I'm the one using this,
                     # I'm not too concerned about bad input.
@@ -143,7 +143,7 @@ $functions = {
         $threadstarted = Get-Date
         Write-Information "Connecting to MQTT - Thread enabled: $($threadconf.Enabled)"
         C:\mqttx\mqttx.exe sub --config C:\mqttx\mqttx-cli-config.json | ForEach-Object -Process {
-            # The json object is pretty printed and pipe is consuming the data row-per-row so gather the whole message first
+            # The json object is pretty printed and pipe is consuming the data row-by-row so gather the whole message first
             $data = $null
             $msg += $_
             if ($_ -match "^}$") {
