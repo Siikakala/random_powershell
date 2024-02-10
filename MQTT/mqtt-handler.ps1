@@ -48,7 +48,7 @@ $functions = {
         Import-Module Voicemeeter
         Write-Information "Connecting to Voicemeeter Potato - Thread enabled: $($threadconf.Enabled)"
         $vmr = Connect-Voicemeeter -Kind "potato"
-        while ($threadconf.Enabled) {
+        while (($global:config).($global:thread).Enabled) {
             if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
                 if ($message.To -ne "Voicemeeter") {
                     Write-Information "Received message for another thread, pushing back to queue"
@@ -104,7 +104,7 @@ $functions = {
                     # $vmr.bus[0].FadeTo(-27, 200)
                     # #>
                             Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].FadeTo($($arg.level), 200)"
-                            $vmr.($arg.type)[$arg.index].FadeTo($arg.level, 200)
+                            $vmr.($arg.type)[$arg.index].FadeTo($arg.level, 200) | Out-Null
                         }
                     }
                     "GetVolume" {
@@ -131,6 +131,9 @@ $functions = {
             }
         }
         Disconnect-Voicemeeter
+        if (-not ($global:config).($global:thread).Enabled) {
+            Write-Information "Exit requested."
+        }
     }
     function Invoke-Listener {
         $com = $global:ComputerName
@@ -189,13 +192,12 @@ $functions = {
                 Write-Information "Thread age over a day - trying to quit."
                 break
             }
-            if (-not $threadconf.Enabled) {
+            if (-not ($global:config).($global:thread).Enabled) {
                 Write-Information "Exit requested - trying to quit."
                 break
             }
         }
-        Write-Information "Disconnected - waiting for 5s before returning to main thread"
-        Start-Sleep -Seconds 5
+        Write-Information "Disconnected"
     }
     function Invoke-Sender {
         $com = $global:ComputerName
@@ -206,7 +208,7 @@ $functions = {
         $stopwatch = [System.Diagnostics.Stopwatch]::new()
         $previousA1Level = -60
         Write-Information "Starting sender thread - Thread enabled: $($threadconf.Enabled)"
-        :outer while ($threadconf.Enabled) {
+        :outer while (($global:config).($global:thread).Enabled) {
             for ($i = 0; $i -lt 150; $i++) {
                 # Extremely hack-y way of doing things in intervals but whatever, I regret nothing! x)
                 # One complete while($true) loop takes 5 mintes, and these actions are taken in roughly once per two secnds. Different actions during it takes a bit of time so using
@@ -217,7 +219,7 @@ $functions = {
                 if ($i % 10 -eq 0) {
                     #This happens once in 20 seconds
                     Write-Information "Sending heartbeat to MQTT"
-                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") #| Out-Null
+                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") | Out-Null
                 }
                 if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
                     if ($message.To -ne "Sender") {
@@ -248,7 +250,7 @@ $functions = {
                 if ($null -ne $message) {
                     if ($message.Payload -ne $previousA1Level) {
                         Write-Information "Sending MQTT message '$($message.Payload)' to topic '$com/status/sound/A1Level'"
-                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload #| Out-Null
+                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload | Out-Null
                         $previousA1Level = $message.Payload
                     }
                     else {
@@ -269,11 +271,16 @@ $functions = {
                         Start-Sleep -Milliseconds $offset
                     }
                 }
+
+                if (-not ($global:config).($global:thread).Enabled) {
+                    Write-Information "Exit requested - breaking outer look."
+                    break outer
+                }
             }
         }
     }
     Write-Information "Starting $thread - invoking $($config.$thread.Function)"
-    Invoke-Expression ($config.$thread.Function)
+    Invoke-Expression $config.$thread.Function
 }
 $pool = [runspacefactory]::CreateRunspacePool(1, 4)
 $pool.open()
@@ -341,13 +348,13 @@ while ($true) {
         if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C")) {
             Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, starting clean-up")
             $ctrlc = $true
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop")
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop within 5s")
             $ChildJobs.Keys | ForEach-Object { $Config.$_.Enabled = $false }
-            Start-Sleep -Seconds 1
+            Start-Sleep -Seconds 5
             Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
             $ChildJobs.Keys | ForEach-Object {
                 Write-Verbose ("{0,38}{1}" -f "", " - $_")
-                $ChildJobs.$_.instance.Dispose()
+                $ChildJobs.$_.instance.Stop()
             }
             Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
         }
