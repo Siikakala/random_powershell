@@ -37,11 +37,110 @@ $functions = {
         $threadconf = ($global:config).($global:thread)
         $message = $null
         $threadstarted = Get-Date
-        $RegisteredEvents = @{}
-        while($threadconf.Enabled){
+        $RegisteredEvents = @()
+        $WatcherProcesses = @("obs64")
+        $QueryTemplate = "Select * from win32_Process{1}Trace where processname = '{0}.exe'"
+        # Event registration uses class which requires admin permissions so checking these here for the thread loop
+        $isAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        $eventsRegistered = $false
+        $AllEventsRegisteredSuccesfully = $true
+        $tries = 0
+        $ProcsWereRunning = @() # And if we are not admin - initialize process poller
+        $ProcsSeen = @()
+        while ($threadconf.Enabled) {
+            if ($isAdmin -and -not $eventsRegistered -and $tries -lt 3) {
+                # We are admin so more efficient event subsriber can be used - after subscribing the os will do the triggering and we can just loop on no-op
+                # Downside is that the LanTrigger calls happens outside of our context so we can't get them to the verbose output
+                foreach ($proc in $WatcherProcesses) {
+                    foreach ($type in "Start", "Stop") {
+                        if ("${proc}_${type}" -notin $RegisteredEvents) {
+                            $query_start = $QueryTemplate -f $proc, $type
+                            try {
+                                Register-CimIndicationEvent -Query $query_start -SourceIdentifier "${proc}_$type" -Action { Use-LanTrigger ("${proc}_$type".ToLower()) }
+                                $RegisteredEvents += "${proc}_${type}"
+                            }
+                            catch {
+                                $AllEventsRegisteredSuccesfully = $false
+                            }
+                        }
+                    }
+                }
+                $tries++
+                if ($AllEventsRegisteredSuccesfully) {
+                    $eventsRegistered = $true
+                }
+            }
+            else {
+                # Unfortunately we are not admin - falling back to polling
+                $ProcsRunning = @()
+                foreach ($proc in $WatcherProcesses) {
+                    if ($null -ne (Get-Process $proc -ErrorAction SilentlyContinue)) {
+                        $ProcsRunning += $proc
+                        if($proc -notin $ProcsSeen){
+                            $ProcsSeen += $proc
+                        }
+                        if ($proc -notin $ProcsWereRunning) {
+                            Write-Information "$proc started running - calling 'Use-LanTrigger '$proc-start'"
+                            Use-LanTrigger "$proc-start"
+                        }
+                    }
+                    else {
+                        if ($proc -notin $ProcsWereRunning -and $proc -in $ProcsSeen) {
+                            Write-Information "$proc has stopped - calling 'Use-LanTrigger '$proc-stop'"
+                            Use-LanTrigger "$proc-stop"
+                            # Removing items from array is bit annoying, so.. This is also faster if the array is big, which is isn't.
+                            $ProcsSeen = $ProcsSeen | ForEach-Object{if($_ -ne $proc){$_}}
+                            if($null -eq $ProcsSeen){
+                                # None of the processes are running so re-initializing array
+                                $ProcsSeen = @()
+                            }
+                        }
+                    }
+                }
+                $ProcsWereRunning = $ProcsRunning
+            }
 
-
+            if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
+                Write-Information "Thread age over a day - cleaning up and quiting."
+                if ($isAdmin) {
+                    foreach ($id in $RegisteredEvents) {
+                        Get-EventSubscriber -SourceIdentifier $id | Unregister-Event
+                        Get-Event -SourceIdentifier $id | Remove-Event
+                    }
+                }
+                break
+            }
+            if (-not $threadconf.Enabled) {
+                Write-Information "Exit requested - cleaning up and quiting."
+                if ($isAdmin) {
+                    foreach ($id in $RegisteredEvents) {
+                        Get-EventSubscriber -SourceIdentifier $id | Unregister-Event
+                        Get-Event -SourceIdentifier $id | Remove-Event
+                    }
+                }
+                break
+            }
+            if ($isAdmin) {
+                # Quite relaxed loop with events as we are only checking for runtime max and if thread exit was requested
+                Start-Sleep -Seconds 3
+            }
+            else {
+                Start-Sleep -Milliseconds 250
+            }
         }
+    }
+    function Use-LanTrigger {
+        param($which)
+        $uriTemplate = "http://172.20.1.225:8090/{0}/trigger"
+        $uri = switch ($which) {
+            "obs64-start" {
+                $uriTemplate -f "tennoji_process_obs-run"
+            }
+            "obs64-stop" {
+                $uriTemplate -f "tennoji_process_obs-stop"
+            }
+        }
+        Invoke-WebRequest $uri -Method Post -DisableKeepAlive | Out-Null
     }
     function Invoke-VoicemeeterControl {
         $q = $global:queue
@@ -321,7 +420,7 @@ $ChildJobs = @{
         instance = $null
         handle   = $null
     }
-    <#
+    #<#
     ProcessWatcher = @{
         instance = $null
         handle   = $null
