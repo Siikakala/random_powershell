@@ -32,12 +32,15 @@ $functions = {
         }
     }
     function Invoke-ProcessWatcher {
+        # This is just handling communication between threads, event registrations and the thread loop - callbacks are handled by Use-LanTrigger
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
         $threadstarted = Get-Date
-        switch ($payload.command) {
-            default {}
+        $RegisteredEvents = @{}
+        while($threadconf.Enabled){
+
+
         }
     }
     function Invoke-VoicemeeterControl {
@@ -49,7 +52,7 @@ $functions = {
         Write-Information "Connecting to Voicemeeter Potato - Thread enabled: $($threadconf.Enabled)"
         $vmr = Connect-Voicemeeter -Kind "potato"
         $previousA1Level = -60
-        while (($global:config).($global:thread).Enabled) {
+        while ($threadconf.Enabled) {
             if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
                 if ($message.To -ne "Voicemeeter") {
                     Write-Information "Received message for another thread, pushing back to queue"
@@ -149,7 +152,7 @@ $functions = {
             }
         }
         Disconnect-Voicemeeter
-        if (-not ($global:config).($global:thread).Enabled) {
+        if (-not $threadconf.Enabled) {
             Write-Information "Exit requested."
         }
     }
@@ -210,7 +213,7 @@ $functions = {
                 Write-Information "Thread age over a day - trying to quit."
                 break
             }
-            if (-not ($global:config).($global:thread).Enabled) {
+            if (-not $threadconf.Enabled) {
                 Write-Information "Exit requested - trying to quit."
                 break
             }
