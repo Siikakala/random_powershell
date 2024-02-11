@@ -22,6 +22,8 @@ $functions = {
         $queue,
         $ComputerName
     )
+    <#
+    # Not implemented yet
     function Invoke-GeneralControl {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
@@ -31,6 +33,7 @@ $functions = {
             default {}
         }
     }
+    # #>
     function Invoke-ProcessWatcher {
         # This is just handling communication between threads, event registrations and the thread loop - callbacks are handled by Use-LanTrigger
         $q = $global:queue
@@ -48,6 +51,20 @@ $functions = {
         $ProcsWereRunning = @() # And if we are not admin - initialize process poller
         $ProcsSeen = @()
         while ($threadconf.Enabled) {
+            if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
+                # Not really used to anything yet but just to be consistent
+                if ($message.To -ne "ProcessWatcher") {
+                    Write-Information "Received message for another thread, pushing back to queue"
+                    $q.TryAdd($message)
+                }
+                else {
+                    Write-Information "Received from $($message.From)"
+                    if ($q.IsEmpty) {
+                        $threadconf.DataWaiting = $false
+                    }
+                }
+            }
+
             if ($isAdmin -and -not $eventsRegistered -and $tries -lt 3) {
                 # We are admin so more efficient event subsriber can be used - after subscribing the os will do the triggering and we can just loop on no-op
                 # Downside is that the LanTrigger calls happens outside of our context so we can't get them to the verbose output
@@ -80,13 +97,13 @@ $functions = {
                             $ProcsSeen += $proc
                         }
                         if ($proc -notin $ProcsWereRunning) {
-                            Write-Information "$proc started running - calling 'Use-LanTrigger '$proc-start'"
+                            Write-Information "$proc started running - calling 'Use-LanTrigger $proc-start"
                             Use-LanTrigger "$proc-start"
                         }
                     }
                     else {
                         if ($proc -notin $ProcsWereRunning -and $proc -in $ProcsSeen) {
-                            Write-Information "$proc has stopped - calling 'Use-LanTrigger '$proc-stop'"
+                            Write-Information "$proc has stopped - calling 'Use-LanTrigger $proc-stop"
                             Use-LanTrigger "$proc-stop"
                             # Removing items from array is bit annoying, so.. This is also faster if the array is big, which is isn't.
                             $ProcsSeen = $ProcsSeen | ForEach-Object{if($_ -ne $proc){$_}}
@@ -157,7 +174,7 @@ $functions = {
                     $q.TryAdd($message)
                 }
                 else {
-                    Write-Information "Received command $($message.payload.command)"
+                    Write-Information "Received command $($message.payload.command) from $($message.From)"
                     if ($q.IsEmpty) {
                         $threadconf.DataWaiting = $false
                     }
