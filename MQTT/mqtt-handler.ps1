@@ -110,22 +110,21 @@ $functions = {
                 }
                 break
             }
-            if (-not $threadconf.Enabled) {
-                Write-Information "Exit requested - cleaning up and quiting."
-                if ($isAdmin) {
-                    foreach ($id in $RegisteredEvents) {
-                        Get-EventSubscriber -SourceIdentifier $id | Unregister-Event
-                        Get-Event -SourceIdentifier $id | Remove-Event
-                    }
-                }
-                break
-            }
             if ($isAdmin) {
                 # Quite relaxed loop with events as we are only checking for runtime max and if thread exit was requested
                 Start-Sleep -Seconds 3
             }
             else {
                 Start-Sleep -Milliseconds 250
+            }
+        }
+        if (-not $threadconf.Enabled) {
+            Write-Information "Exit requested - cleaning up and quiting."
+            if ($isAdmin) {
+                foreach ($id in $RegisteredEvents) {
+                    Get-EventSubscriber -SourceIdentifier $id | Unregister-Event
+                    Get-Event -SourceIdentifier $id | Remove-Event
+                }
             }
         }
     }
@@ -395,11 +394,15 @@ $functions = {
                     }
                 }
 
-                if (-not ($global:config).($global:thread).Enabled) {
+                if (-not $threadconf.Enabled) {
                     Write-Information "Exit requested - breaking outer look."
                     break outer
                 }
             }
+        }
+        # There's tiiiiiny race condition - if the exit request has gone past the inner loop for the last time BUT main loop hasn't yet started new, you might drop out without output
+        if (-not $threadconf.Enabled) {
+            Write-Information "Exiting"
         }
     }
     Write-Information "Starting $thread - invoking $($config.$thread.Function)"
