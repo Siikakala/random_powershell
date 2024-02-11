@@ -54,9 +54,9 @@ $functions = {
                 foreach ($proc in $WatcherProcesses) {
                     foreach ($type in "Start", "Stop") {
                         if ("${proc}_${type}" -notin $RegisteredEvents) {
-                            $query_start = $QueryTemplate -f $proc, $type
+                            $query = $QueryTemplate -f $proc, $type
                             try {
-                                Register-CimIndicationEvent -Query $query_start -SourceIdentifier "${proc}_$type" -Action { Use-LanTrigger ("${proc}_$type".ToLower()) }
+                                Register-CimIndicationEvent -Query $query -SourceIdentifier "${proc}_$type" -Action { Use-LanTrigger ("${proc}_$type".ToLower()) }
                                 $RegisteredEvents += "${proc}_${type}"
                             }
                             catch {
