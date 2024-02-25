@@ -37,7 +37,7 @@ It achieves several things:
 
 * Automating light scenes
   * Uses LAN Triggers as Process Watcher is using this mainly
-    * Separate triggers when prcess is detected running and when it stops
+    * Separate triggers when process is detected running and when it stops
     * Also saves up device count - one LAN Trigger device in SmartThings can handle 19 different triggers, so, 9 on-off triggers with one spare trigger
   * When OBS is running, certain scene triggers so there's enough light to my face
   * When I'm using PS Remote Play, another scene triggers so there's minimal reflections to my display
