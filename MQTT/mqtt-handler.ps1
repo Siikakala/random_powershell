@@ -22,18 +22,71 @@ $functions = {
         $queue,
         $ComputerName
     )
-    <#
-    # Not implemented yet
-    function Invoke-GeneralControl {
-        $q = $global:queue
-        $threadconf = ($global:config).($global:thread)
-        $message = $null
-        $threadstarted = Get-Date
-        switch ($payload.command) {
-            default {}
+    <# HELPERS #>
+
+    function Use-LanTrigger {
+        param($which)
+        # This is calling Tod Austin's LanTrigger utility running on my rpi, which is triggering momentary virtual button presses in SmartThings, triggering automations
+        # https://github.com/toddaustin07/lantrigger
+        $uriTemplate = "http://172.20.1.225:8090/{0}/trigger"
+        $uri = switch ($which) {
+            "obs64-start" {
+                $uriTemplate -f "tennoji_process_obs-run"
+            }
+            "obs64-stop" {
+                $uriTemplate -f "tennoji_process_obs-stop"
+            }
+            "RemotePlay-start" {
+                $uriTemplate -f "tennoji_process_remoteplay-run"
+            }
+            "RemotePlay-stop" {
+                $uriTemplate -f "tennoji_process_remoteplay-stop"
+            }
+            "Mode-Speakers" {
+                $uriTemplate -f "Tennoji_speakers-on"
+            }
+            "Mode-Headphones" {
+                $uriTemplate -f "Tennoji_speakers-off"
+            }
+        }
+        Invoke-WebRequest $uri -Method Post -DisableKeepAlive | Out-Null
+    }
+    function Set-VoicemeeterButton {
+        param(
+            $call,
+            $caller
+        )
+        # This is just a wrapper for easier call handling
+        $VMcall = @{
+            command = "SetButtonState"
+            args    = @{
+                Button = -1
+                State  = $false
+            }
+        }
+        switch ($call) {
+            "RemotePlay-start" {
+                $VMcall.args.Button = 15
+                $VMcall.args.State = $true
+            }
+            "RemotePlay-stop" {
+                $VMcall.args.Button = 15
+                $VMcall.args.State = $false
+            }
+        }
+        if ($VMcall.args.Button -ne -1) {
+            # Valid call, adding message to queue
+            $q.TryAdd([PSCustomObject]@{
+                    To      = "Voicemeeter"
+                    From    = $caller
+                    Payload = $VMcall
+                })
+            $global:config.Voicemeeter.DataWaiting = $true
         }
     }
-    # #>
+
+
+    <# THREAD FUNCTIONS #>
     function Invoke-ProcessWatcher {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
@@ -128,66 +181,6 @@ $functions = {
                     Get-Event -SourceIdentifier $id | Remove-Event
                 }
             }
-        }
-    }
-    function Use-LanTrigger {
-        param($which)
-        # This is calling Tod Austin's LanTrigger utility running on my rpi, which is triggering momentary virtual button presses in SmartThings, triggering automations
-        # https://github.com/toddaustin07/lantrigger
-        $uriTemplate = "http://172.20.1.225:8090/{0}/trigger"
-        $uri = switch ($which) {
-            "obs64-start" {
-                $uriTemplate -f "tennoji_process_obs-run"
-            }
-            "obs64-stop" {
-                $uriTemplate -f "tennoji_process_obs-stop"
-            }
-            "RemotePlay-start" {
-                $uriTemplate -f "tennoji_process_remoteplay-run"
-            }
-            "RemotePlay-stop" {
-                $uriTemplate -f "tennoji_process_remoteplay-stop"
-            }
-            "Mode-Speakers" {
-                $uriTemplate -f "Tennoji_speakers-on"
-            }
-            "Mode-Headphones" {
-                $uriTemplate -f "Tennoji_speakers-off"
-            }
-        }
-        Invoke-WebRequest $uri -Method Post -DisableKeepAlive | Out-Null
-    }
-    function Set-VoicemeeterButton {
-        param(
-            $call,
-            $caller
-        )
-        # This is just a wrapper for easier call handling
-        $VMcall = @{
-            command = "SetButtonState"
-            args    = @{
-                Button = -1
-                State  = $false
-            }
-        }
-        switch ($call) {
-            "RemotePlay-start" {
-                $VMcall.args.Button = 15
-                $VMcall.args.State = $true
-            }
-            "RemotePlay-stop" {
-                $VMcall.args.Button = 15
-                $VMcall.args.State = $false
-            }
-        }
-        if ($VMcall.args.Button -ne -1) {
-            # Valid call, adding message to queue
-            $q.TryAdd([PSCustomObject]@{
-                    To      = "Voicemeeter"
-                    From    = $caller
-                    Payload = $VMcall
-                })
-            $global:config.Voicemeeter.DataWaiting = $true
         }
     }
     function Invoke-VoicemeeterControl {
@@ -352,6 +345,19 @@ $functions = {
             Write-Information "Exit requested."
         }
     }
+
+    <#
+    # Not implemented yet
+    function Invoke-GeneralControl {
+        $q = $global:queue
+        $threadconf = ($global:config).($global:thread)
+        $message = $null
+        $threadstarted = Get-Date
+        switch ($payload.command) {
+            default {}
+        }
+    }
+    # #>
     function Invoke-Listener {
         $com = $global:ComputerName
         $q = $global:queue
