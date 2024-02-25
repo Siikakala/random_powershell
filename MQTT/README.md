@@ -41,7 +41,7 @@ It achieves several things:
     * Also saves up device count - one LAN Trigger device in SmartThings can handle 19 different triggers, so, 9 on-off triggers with one spare trigger
   * When OBS is running, certain scene triggers so there's enough light to my face
   * When I'm using PS Remote Play, another scene triggers so there's minimal reflections to my display
-    * PS5 is connected to my monitor, so, no speakers. I'm actually using that input in display while controller input is going through remote play
+    * PS5 is connected to my monitor, so, no speakers. I'm actually using that input in display while controller input and audio output is going through remote play
 * Automating PC audio
   * Enforcing maximum volume level between 21:30 - 08:00.
     * SmartThings gets info about A1 level and output device with MQTT.
