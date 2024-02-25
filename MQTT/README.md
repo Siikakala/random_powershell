@@ -66,7 +66,7 @@ I want to implement these in some point:
 * Send information if there's active wake lock preventing PC to sleep
 
 These needs some love:
-* Voicemeeter thread might not initialize properly if the thread has died once - grafefully or not
+* Voicemeeter thread might not initialize properly if the thread has died once - gracefully or not
   * Prevents audio automations
   * Also requires to kill the whole process, with it's pane/console window to get working again
 * Harmonize data payload structures - voicemeeter returns data in different form than what it receives.
