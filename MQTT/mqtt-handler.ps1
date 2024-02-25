@@ -42,6 +42,12 @@ $functions = {
             "RemotePlay-stop" {
                 $uriTemplate -f "tennoji_process_remoteplay-stop"
             }
+            "GeforceNOW-start" {
+                $uriTemplate -f "tennoji_process_gfnow-run"
+            }
+            "GeforceNOW-stop" {
+                $uriTemplate -f "tennoji_process_gfnow-stop"
+            }
             "Mode-Speakers" {
                 $uriTemplate -f "Tennoji_speakers-on"
             }
@@ -66,11 +72,19 @@ $functions = {
         }
         switch ($call) {
             "RemotePlay-start" {
-                $VMcall.args.Button = 15
+                $VMcall.args.Button = 15 # Music to -15 dB
                 $VMcall.args.State = $true
             }
             "RemotePlay-stop" {
                 $VMcall.args.Button = 15
+                $VMcall.args.State = $false
+            }
+            "GeforceNOW-start" {
+                $VMcall.args.Button = 25 # Music to -25 dB
+                $VMcall.args.State = $true
+            }
+            "GeforceNOW-stop" {
+                $VMcall.args.Button = 25
                 $VMcall.args.State = $false
             }
         }
@@ -100,6 +114,13 @@ $functions = {
             },
             @{
                 Process = "RemotePlay"
+                Actions = @(
+                    "Use-LanTrigger"
+                    "Set-VoicemeeterButton -caller ProcessWatcher -call"
+                )
+            },
+            @{
+                Process = "GeforceNow"
                 Actions = @(
                     "Use-LanTrigger"
                     "Set-VoicemeeterButton -caller ProcessWatcher -call"
