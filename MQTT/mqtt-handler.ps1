@@ -41,7 +41,19 @@ $functions = {
         $message = $null
         $threadstarted = Get-Date
         $RegisteredEvents = @()
-        $WatcherProcesses = @("obs64")
+        $WatcherProcesses = @(
+            @{
+                Process = "obs64"
+                Actions = @("Use-LanTrigger")
+            },
+            @{
+                Process = "RemotePlay"
+                Actions = @(
+                    "Use-LanTrigger"
+                    "Set-VoicemeeterButton -caller ProcessWatcher -call"
+                )
+            }
+        )
         $QueryTemplate = "Select * from win32_Process{1}Trace where processname = '{0}.exe'"
         # Event registration uses class which requires admin permissions so checking these here for the thread loop
         $isAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -91,23 +103,29 @@ $functions = {
                 # Unfortunately we are not admin - falling back to polling
                 $ProcsRunning = @()
                 foreach ($proc in $WatcherProcesses) {
-                    if ($null -ne (Get-Process $proc -ErrorAction SilentlyContinue)) {
-                        $ProcsRunning += $proc
-                        if($proc -notin $ProcsSeen){
-                            $ProcsSeen += $proc
+                    if ($null -ne (Get-Process $proc.Process -ErrorAction SilentlyContinue)) {
+                        $ProcsRunning += $proc.Process
+                        if ($proc.Process -notin $ProcsSeen) {
+                            $ProcsSeen += $proc.Process
                         }
-                        if ($proc -notin $ProcsWereRunning) {
-                            Write-Information "$proc started running - calling 'Use-LanTrigger $proc-start"
-                            Use-LanTrigger "$proc-start"
+                        if ($proc.Process -notin $ProcsWereRunning) {
+                            Write-Information "$($proc.Process) started running - running Actions"
+                            foreach ($action in $proc.Actions) {
+                                Write-Information " - Calling '$action $($proc.Process)-start'"
+                                Invoke-Expression "$action $($proc.Process)-start"
+                            }
                         }
                     }
                     else {
-                        if ($proc -notin $ProcsWereRunning -and $proc -in $ProcsSeen) {
-                            Write-Information "$proc has stopped - calling 'Use-LanTrigger $proc-stop"
-                            Use-LanTrigger "$proc-stop"
+                        if ($proc.Process -notin $ProcsWereRunning -and $proc.Process -in $ProcsSeen) {
+                            Write-Information "$($proc.Process) has stopped - running Actions"
+                            foreach ($action in $proc.Actions) {
+                                Write-Information " - Calling '$action $($proc.Process)-stop'"
+                                Invoke-Expression "$action $($proc.Process)-stop"
+                            }
                             # Removing items from array is bit annoying, so.. This is also faster if the array is big, which is isn't.
-                            $ProcsSeen = $ProcsSeen | ForEach-Object{if($_ -ne $proc){$_}}
-                            if($null -eq $ProcsSeen){
+                            $ProcsSeen = $ProcsSeen | ForEach-Object { if ($_ -ne $proc.Process) { $_ } }
+                            if ($null -eq $ProcsSeen) {
                                 # None of the processes are running so re-initializing array
                                 $ProcsSeen = @()
                             }
@@ -155,8 +173,53 @@ $functions = {
             "obs64-stop" {
                 $uriTemplate -f "tennoji_process_obs-stop"
             }
+            "RemotePlay-start" {
+                $uriTemplate -f "tennoji_process_remoteplay-run"
+            }
+            "RemotePlay-stop" {
+                $uriTemplate -f "tennoji_process_remoteplay-stop"
+            }
+            "Mode-Speakers" {
+                $uriTemplate -f "Tennoji_speakers-on"
+            }
+            "Mode-Headphones" {
+                $uriTemplate -f "Tennoji_speakers-off"
+            }
         }
         Invoke-WebRequest $uri -Method Post -DisableKeepAlive | Out-Null
+    }
+    function Set-VoicemeeterButton {
+        param(
+            $call,
+            $caller
+        )
+        # This is just a wrapper for easier call handling
+        $VMcall = @{
+            command = "SetButtonState"
+            args    = @{
+                Button = -1
+                State  = $false
+            }
+        }
+        switch ($call) {
+            "RemotePlay-start" {
+                $VMcall.args.Button = 15
+                $VMcall.args.State = $true
+            }
+            "RemotePlay-stop" {
+                $VMcall.args.Button = 15
+                $VMcall.args.State = $false
+            }
+        }
+        if ($VMcall.args.Button -ne -1) {
+            # Valid call, adding message to queue
+            $q.TryAdd([PSCustomObject]@{
+                    To      = "Voicemeeter"
+                    From    = $caller
+                    Payload = $VMcall
+                })
+            $global:config.Voicemeeter.DataWaiting = $true
+        }
     }
     function Invoke-VoicemeeterControl {
         $q = $global:queue
@@ -167,6 +230,7 @@ $functions = {
         Write-Information "Connecting to Voicemeeter Potato - Thread enabled: $($threadconf.Enabled)"
         $vmr = Connect-Voicemeeter -Kind "potato"
         $previousA1Level = -60
+        $previousMode = "?"
         while ($threadconf.Enabled) {
             if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
                 if ($message.To -ne "Voicemeeter") {
@@ -186,13 +250,22 @@ $functions = {
                         switch ($arg.Mode) {
                             "Speakers" {
                                 # This MacroButton's button loads Voicemeeter configuration with my M-Track ASIO driver as A1 output device, to which my speakers are connected to
+                                Write-Information "Setting MacroButtons id 11 state to True"
                                 $vmr.button[11].state = $true
                             }
                             "Headphones" {
                                 # This MacroButton's button loads Voicemeeter configuration with my Bluetooth headphones as A1 output device. In the case headphones aren't connected,
                                 # Voicemeeter ends up in engine error state and lets go all wake locks for audio devices, potentially allowing computer to sleep
+                                Write-Information "Setting MacroButtons id 10 state to True"
                                 $vmr.button[10].state = $true
                             }
+                        }
+                    }
+                    "SetButtonState" {
+                        if ($null -ne $arg.Button -and $null -ne $arg.State) {
+                            # Setting button state according to call
+                            Write-Information "Setting MacroButtons id $($arg.Button) state to $($arg.State)"
+                            $vmr.button[$arg.Button].state = $arg.State
                         }
                     }
                     "SetVolume" {
@@ -232,7 +305,20 @@ $functions = {
                         if ($null -ne $arg.index -and $null -ne $arg.type) {
                             # See explanation above, though this is requesting info, not setting it. Slider value is returned in 'gain' property
                             Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].gain"
-                            $return = ($vmr.($arg.type)[$arg.index]).gain
+                            $return = @{
+                                Trigger = "A1Level"
+                                Value   = ($vmr.($arg.type)[$arg.index]).gain
+                            }
+                        }
+                    }
+                    "GetMode" {
+                        $return = switch ($vmr.bus[0].device.name) {
+                            "M-Track Quad ASIO Driver" {
+                                "Speakers"
+                            }
+                            "Headphones (MOMENTUM 4 Stereo)" {
+                                "Headphones"
+                            }
                         }
                     }
                 }
@@ -247,16 +333,42 @@ $functions = {
             }
             else {
                 if ((Get-Date).Second % 2 -eq 0) {
+                    # Handle changes
                     $A1Level = $vmr.bus[0].gain
-                    if ($A1Level -ne $previousA1Level) {
+                    if ($A1Level -ne $previousA1Level -and $A1Level -ne -60) {
                         Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
                         $q.TryAdd([PSCustomObject]@{
                                 To      = "Sender"
                                 From    = "Voicemeeter"
-                                Payload = $A1Level
+                                Payload = @{
+                                    Trigger = "A1Level"
+                                    Value   = $A1Level
+                                }
                             })
                         $global:config.Sender.DataWaiting = $true
                         $previousA1Level = $A1Level
+                    }
+
+                    $Mode = switch ($vmr.bus[0].device.name) {
+                        "M-Track Quad ASIO Driver" {
+                            "Speakers"
+                        }
+                        "Headphones (MOMENTUM 4 Stereo)" {
+                            "Headphones"
+                        }
+                    }
+                    if ($Mode -ne $previousMode){
+                        Write-Information "Mode changed $previousMode -> $Mode - informing Sender"
+                        $q.TryAdd([PSCustomObject]@{
+                                To      = "Sender"
+                                From    = "Voicemeeter"
+                                Payload = @{
+                                    Trigger = "Mode"
+                                    Value   = $Mode
+                                }
+                            })
+                        $global:config.Sender.DataWaiting = $true
+                        $previousMode = $Mode
                     }
                 }
             }
@@ -387,13 +499,24 @@ $functions = {
                     $global:config.Voicemeeter.DataWaiting = $true
                 }
                 if ($null -ne $message) {
-                    if ($message.Payload -ne $previousA1Level) {
-                        Write-Information "Sending MQTT message '$($message.Payload)' to topic '$com/status/sound/A1Level'"
-                        c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload | Out-Null
-                        $previousA1Level = $message.Payload
-                    }
-                    else {
-                        Write-Information "A1 level stayed unchanged"
+                    switch ($message.Payload.Trigger) {
+                        "A1Level" {
+                            if ($message.Payload.Value -ne $previousA1Level) {
+                                Write-Information "Sending MQTT message '$($message.Payload.Value)' to topic '$com/status/sound/A1Level'"
+                                c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload.Value | Out-Null
+                                $previousA1Level = $message.Payload.Value
+                            }
+                            else {
+                                Write-Information "A1 level stayed unchanged"
+                            }
+                        }
+                        "Mode" {
+                            Write-Information "Sound mode changed to '$($message.Payload.Value)' - Calling actions"
+                            Write-Information " - Calling 'Use-LanTrigger Mode-$($message.Payload.Value)'"
+                            Use-LanTrigger "Mode-$($message.Payload.Value)"
+                            Write-Information " - Sending MQTT message '$($message.Payload.Value)' to topic '$com/status/sound/mode'"
+                            c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/mode" -m $message.Payload.Value | Out-Null
+                        }
                     }
                 }
 
@@ -428,15 +551,15 @@ $functions = {
 $pool = [runspacefactory]::CreateRunspacePool(1, 4)
 $pool.open()
 $ChildJobs = @{
-    Sender      = @{
+    Sender         = @{
         instance = $null
         handle   = $null
     }
-    Receiver    = @{
+    Receiver       = @{
         instance = $null
         handle   = $null
     }
-    Voicemeeter = @{
+    Voicemeeter    = @{
         instance = $null
         handle   = $null
     }
