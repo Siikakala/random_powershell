@@ -165,13 +165,7 @@ $functions = {
                 }
                 break
             }
-            if ($isAdmin) {
-                # Quite relaxed loop with events as we are only checking for runtime max and if thread exit was requested
-                Start-Sleep -Seconds 3
-            }
-            else {
-                Start-Sleep -Milliseconds 250
-            }
+            Start-Sleep -Milliseconds 250
         }
         if (-not $threadconf.Enabled) {
             Write-Information "Exit requested - cleaning up and quiting."
