@@ -45,7 +45,7 @@ It achieves several things:
 * Automating PC audio
   * Enforcing maximum volume level between 21:30 - 08:00.
     * SmartThings gets info about A1 level and output device with MQTT.
-      * Output level is numeric device without unit information for easier parsing (message is in form "<numeric value> <unit>")
+      * Output level is numeric device without unit information for easier parsing (message is in form `<numeric value> <unit>`)
         * Receives and sends information with different topics. If update came from MQTT, won't send updates about the changes -> loop protected
       * Output device in SmartThings is just switch - on means speakers, off means headphones
         * Changes can happen from ST, causing change on PC; or on PC, causing update to device state
