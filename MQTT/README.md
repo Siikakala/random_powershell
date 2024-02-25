@@ -11,11 +11,11 @@ Utility running on my main computer running Windows 10. There's several parts:
 * Voicemeeter Potato handler
 * Process Watcher
 
-Main thread handles the script output and thread lifecycling
-MQTT Listener parses whatever mqttx client spits out and reacts to the messages as needed
-MQTT Sender sends updates to topics listened by SmartThings virtual devices
-Voicemeeter Potato handler is handling all the Voicemeeter API calls and informs sender if user changed something (A1 volume or device)
-Process watcher triggers actions in SmartThings (utilising LAN Triggers) and Voicemeeter (changing MacroButtons button states) whenever watched process is running and stops
+- Main thread handles the script output and thread lifecycling
+- MQTT Listener parses whatever mqttx client spits out and reacts to the messages as needed
+- MQTT Sender sends updates to topics listened by SmartThings virtual devices
+- Voicemeeter Potato handler is handling all the Voicemeeter API calls and informs sender if user changed something (A1 volume or device)
+- Process watcher triggers actions in SmartThings (utilising LAN Triggers) and Voicemeeter (changing MacroButtons button states) whenever watched process is running and stops
 
 This is close integration with SmartThings and uses several utilities Todd Austin has programmed:
 * [LAN Trigger](https://github.com/toddaustin07/lantrigger)
