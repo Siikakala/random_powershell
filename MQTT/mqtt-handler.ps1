@@ -35,7 +35,6 @@ $functions = {
     }
     # #>
     function Invoke-ProcessWatcher {
-        # This is just handling communication between threads, event registrations and the thread loop - callbacks are handled by Use-LanTrigger
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
@@ -54,13 +53,7 @@ $functions = {
                 )
             }
         )
-        $QueryTemplate = "Select * from win32_Process{1}Trace where processname = '{0}.exe'"
-        # Event registration uses class which requires admin permissions so checking these here for the thread loop
-        $isAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        $eventsRegistered = $false
-        $AllEventsRegisteredSuccesfully = $true
-        $tries = 0
-        $ProcsWereRunning = @() # And if we are not admin - initialize process poller
+        $ProcsWereRunning = @()
         $ProcsSeen = @()
         while ($threadconf.Enabled) {
             if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
@@ -76,64 +69,38 @@ $functions = {
                     }
                 }
             }
-
-            if ($isAdmin -and -not $eventsRegistered -and $tries -lt 3) {
-                # We are admin so more efficient event subsriber can be used - after subscribing the os will do the triggering and we can just loop on no-op
-                # Downside is that the LanTrigger calls happens outside of our context so we can't get them to the verbose output
-                foreach ($proc in $WatcherProcesses) {
-                    foreach ($type in "Start", "Stop") {
-                        if ("${proc}_${type}" -notin $RegisteredEvents) {
-                            $query = $QueryTemplate -f $proc, $type
-                            try {
-                                Register-CimIndicationEvent -Query $query -SourceIdentifier "${proc}_$type" -Action { Use-LanTrigger ("${proc}_$type".ToLower()) }
-                                $RegisteredEvents += "${proc}_${type}"
-                            }
-                            catch {
-                                $AllEventsRegisteredSuccesfully = $false
-                            }
+            $ProcsRunning = @()
+            foreach ($proc in $WatcherProcesses) {
+                if ($null -ne (Get-Process $proc.Process -ErrorAction SilentlyContinue)) {
+                    $ProcsRunning += $proc.Process
+                    if ($proc.Process -notin $ProcsSeen) {
+                        $ProcsSeen += $proc.Process
+                    }
+                    if ($proc.Process -notin $ProcsWereRunning) {
+                        Write-Information "$($proc.Process) started running - running Actions"
+                        foreach ($action in $proc.Actions) {
+                            Write-Information " - Calling '$action $($proc.Process)-start'"
+                            Invoke-Expression "$action $($proc.Process)-start"
                         }
                     }
                 }
-                $tries++
-                if ($AllEventsRegisteredSuccesfully) {
-                    $eventsRegistered = $true
+                else {
+                    if ($proc.Process -notin $ProcsWereRunning -and $proc.Process -in $ProcsSeen) {
+                        Write-Information "$($proc.Process) has stopped - running Actions"
+                        foreach ($action in $proc.Actions) {
+                            Write-Information " - Calling '$action $($proc.Process)-stop'"
+                            Invoke-Expression "$action $($proc.Process)-stop"
+                        }
+                        # Removing items from array is bit annoying, so.. This is also faster if the array is big, which is isn't.
+                        $ProcsSeen = $ProcsSeen | ForEach-Object { if ($_ -ne $proc.Process) { $_ } }
+                        if ($null -eq $ProcsSeen) {
+                            # None of the processes are running so re-initializing array
+                            $ProcsSeen = @()
+                        }
+                    }
                 }
             }
-            else {
-                # Unfortunately we are not admin - falling back to polling
-                $ProcsRunning = @()
-                foreach ($proc in $WatcherProcesses) {
-                    if ($null -ne (Get-Process $proc.Process -ErrorAction SilentlyContinue)) {
-                        $ProcsRunning += $proc.Process
-                        if ($proc.Process -notin $ProcsSeen) {
-                            $ProcsSeen += $proc.Process
-                        }
-                        if ($proc.Process -notin $ProcsWereRunning) {
-                            Write-Information "$($proc.Process) started running - running Actions"
-                            foreach ($action in $proc.Actions) {
-                                Write-Information " - Calling '$action $($proc.Process)-start'"
-                                Invoke-Expression "$action $($proc.Process)-start"
-                            }
-                        }
-                    }
-                    else {
-                        if ($proc.Process -notin $ProcsWereRunning -and $proc.Process -in $ProcsSeen) {
-                            Write-Information "$($proc.Process) has stopped - running Actions"
-                            foreach ($action in $proc.Actions) {
-                                Write-Information " - Calling '$action $($proc.Process)-stop'"
-                                Invoke-Expression "$action $($proc.Process)-stop"
-                            }
-                            # Removing items from array is bit annoying, so.. This is also faster if the array is big, which is isn't.
-                            $ProcsSeen = $ProcsSeen | ForEach-Object { if ($_ -ne $proc.Process) { $_ } }
-                            if ($null -eq $ProcsSeen) {
-                                # None of the processes are running so re-initializing array
-                                $ProcsSeen = @()
-                            }
-                        }
-                    }
-                }
-                $ProcsWereRunning = $ProcsRunning
-            }
+            $ProcsWereRunning = $ProcsRunning
 
             if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
                 Write-Information "Thread age over a day - cleaning up and quiting."
@@ -165,6 +132,8 @@ $functions = {
     }
     function Use-LanTrigger {
         param($which)
+        # This is calling Tod Austin's LanTrigger utility running on my rpi, which is triggering momentary virtual button presses in SmartThings, triggering automations
+        # https://github.com/toddaustin07/lantrigger
         $uriTemplate = "http://172.20.1.225:8090/{0}/trigger"
         $uri = switch ($which) {
             "obs64-start" {
@@ -357,7 +326,7 @@ $functions = {
                             "Headphones"
                         }
                     }
-                    if ($Mode -ne $previousMode){
+                    if ($Mode -ne $previousMode) {
                         Write-Information "Mode changed $previousMode -> $Mode - informing Sender"
                         $q.TryAdd([PSCustomObject]@{
                                 To      = "Sender"
@@ -429,6 +398,22 @@ $functions = {
                         }
                         "$com/heartbeat" {
                             Write-Information "- Heartbeat"
+                        }
+                        "$com/meta/mainvolume" {
+                            Write-Information "- Voicemeeter A1 volume control, queuing payload"
+                            $q.TryAdd([PSCustomObject]@{
+                                    To      = "Voicemeeter"
+                                    From    = "Listener"
+                                    Payload = @{
+                                        command = "SetVolume"
+                                        args    = @{
+                                            type  = "bus"
+                                            index = 0
+                                            level = $payload
+                                        }
+                                    }
+                                })
+                            $global:config.Voicemeeter.DataWaiting = $true
                         }
                     }
                 }
