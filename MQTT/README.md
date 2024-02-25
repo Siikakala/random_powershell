@@ -11,6 +11,7 @@ Utility running on my main computer running Windows 10. There's several parts:
 * Voicemeeter Potato handler
 * Process Watcher
 
+What they do?
 - Main thread handles the script output and thread lifecycling
 - MQTT Listener parses whatever mqttx client spits out and reacts to the messages as needed
 - MQTT Sender sends updates to topics listened by SmartThings virtual devices
