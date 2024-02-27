@@ -60,7 +60,8 @@ $functions = {
     function Set-VoicemeeterButton {
         param(
             $call,
-            $caller
+            $caller,
+            [switch] $HandleMusicDucking
         )
         # This is just a wrapper for easier call handling
         $VMcall = @{
@@ -70,6 +71,42 @@ $functions = {
                 State  = $false
             }
         }
+        $DisableDuck = @(
+            @{
+                Button = 4
+                Trigger = $false
+            },
+            @{
+                Button = 5
+                Trigger = $false
+            },
+            @{
+                Button = 14
+                Trigger = $false
+            },
+            @{
+                Button = 23
+                Trigger = $false
+            }
+        )
+        $EnableDuck = @(
+            @{
+                Button = 4
+                Trigger = $true
+            },
+            @{
+                Button = 5
+                Trigger = $true
+            },
+            @{
+                Button = 14
+                Trigger = $true
+            },
+            @{
+                Button = 23
+                Trigger = $true
+            }
+        )
         switch ($call) {
             "RemotePlay-start" {
                 $VMcall.args.Button = 15 # Music to -15 dB
@@ -89,6 +126,14 @@ $functions = {
             }
         }
         if ($VMcall.args.Button -ne -1) {
+            if($HandleMusicDucking.IsPresent){
+                if($call -match "^.*?-start$"){
+                    $argsArray = $DisableDuck + $VMcall.args
+                }else{
+                    $argsArray = $EnableDuck + $VMcall.args
+                }
+                $VMcall.args = $argsArray
+            }
             # Valid call, adding message to queue
             $q.TryAdd([PSCustomObject]@{
                     To      = "Voicemeeter"
@@ -116,14 +161,14 @@ $functions = {
                 Process = "RemotePlay"
                 Actions = @(
                     "Use-LanTrigger"
-                    "Set-VoicemeeterButton -caller ProcessWatcher -call"
+                    "Set-VoicemeeterButton -HandleMusicDucking -caller ProcessWatcher -call"
                 )
             },
             @{
                 Process = "GeforceNow"
                 Actions = @(
                     "Use-LanTrigger"
-                    "Set-VoicemeeterButton -caller ProcessWatcher -call"
+                    "Set-VoicemeeterButton -HandleMusicDucking -caller ProcessWatcher -call"
                 )
             }
         )
@@ -220,34 +265,52 @@ $functions = {
                         $threadconf.DataWaiting = $false
                     }
                 }
-                $arg = $message.payload.args
+                $params = $message.payload.args
                 $return = $null
-                switch ($message.payload.command.trim()) {
-                    "SwitchMode" {
-                        switch ($arg.Mode) {
-                            "Speakers" {
-                                # This MacroButton's button loads Voicemeeter configuration with my M-Track ASIO driver as A1 output device, to which my speakers are connected to
-                                Write-Information "Setting MacroButtons id 11 state to True"
-                                $vmr.button[11].state = $true
-                            }
-                            "Headphones" {
-                                # This MacroButton's button loads Voicemeeter configuration with my Bluetooth headphones as A1 output device. In the case headphones aren't connected,
-                                # Voicemeeter ends up in engine error state and lets go all wake locks for audio devices, potentially allowing computer to sleep
-                                Write-Information "Setting MacroButtons id 10 state to True"
-                                $vmr.button[10].state = $true
+                foreach ($arg in @($params)) {
+                    # Typical case is that there's only one set of payload but this way the handling is identical regardless how much there was
+                    switch ($message.payload.command.trim()) {
+                        "SwitchMode" {
+                            # Button state API calls are latching even with push buttons, so handling the both directions at once. Also reason why this is separate command.
+                            switch ($arg.Mode) {
+                                "Speakers" {
+                                    # This MacroButton's button loads Voicemeeter configuration with my M-Track ASIO driver as A1 output device, to which my speakers are connected to
+                                    Write-Information "Setting MacroButtons id 11 state to True for 100ms"
+                                    $vmr.button[11].state = $true
+                                    Start-Sleep -Milliseconds 100
+                                    $vmr.button[11].state = $false
+                                    Write-Information "Setting MacroButtons id 0 state to False"
+                                    $vmr.button[0].state = $false
+                                }
+                                "Headphones" {
+                                    # This MacroButton's button loads Voicemeeter configuration with my Bluetooth headphones as A1 output device. In the case headphones aren't connected,
+                                    # Voicemeeter ends up in engine error state and lets go all wake locks for audio devices, potentially allowing computer to sleep
+                                    Write-Information "Setting MacroButtons id 10 state to True for 100ms"
+                                    $vmr.button[10].state = $true
+                                    Start-Sleep -Milliseconds 100
+                                    $vmr.button[10].state = $false
+                                    Write-Information "Setting MacroButtons id 0 state to False"
+                                    $vmr.button[0].state = $false
+                                }
                             }
                         }
-                    }
-                    "SetButtonState" {
-                        if ($null -ne $arg.Button -and $null -ne $arg.State) {
-                            # Setting button state according to call
-                            Write-Information "Setting MacroButtons id $($arg.Button) state to $($arg.State)"
-                            $vmr.button[$arg.Button].state = $arg.State
+                        "SetButtonState" {
+                            # With this approach you can either change button state or if it should act on trigger - or both. Both trigger and state are boooleans
+                            # !! NOTE: THIS API CALL IS LATCHING EVEN IF THE BUTTON ITSELF ISN'T! You MUST set state back to false by yourself! !!
+                            if ($null -ne $arg.Button -and $null -ne $arg.State) {
+                                # Setting button state according to call
+                                Write-Information "Setting MacroButtons id $($arg.Button) state to $($arg.State)"
+                                $vmr.button[$arg.Button].state = $arg.State
+                            }
+                            if ($null -ne $arg.Button -and $null -ne $arg.Trigger) {
+                                # Setting button trigger state according to call
+                                Write-Information "Setting MacroButtons id $($arg.Button) trigger to $($arg.Trigger)"
+                                $vmr.button[$arg.Button].trigger = $arg.trigger
+                            }
                         }
-                    }
-                    "SetVolume" {
-                        if ($null -ne $arg.index -and $null -ne $arg.type -and $null -ne $arg.level) {
-                            <#
+                        "SetVolume" {
+                            if ($null -ne $arg.index -and $null -ne $arg.type -and $null -ne $arg.level) {
+                                <#
                     # This looks *very* confusing, so let me break it out:
                     #
                     # $vmr = voicemeeter C API
@@ -274,38 +337,40 @@ $functions = {
                     # will be converted to this call:
                     # $vmr.bus[0].FadeTo(-27, 200)
                     # #>
-                            Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].FadeTo($($arg.level), 200)"
-                            $vmr.($arg.type)[$arg.index].FadeTo($arg.level, 200) | Out-Null
+                                Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].FadeTo($($arg.level), 200)"
+                                $vmr.($arg.type)[$arg.index].FadeTo($arg.level, 200) | Out-Null
+                            }
                         }
-                    }
-                    "GetVolume" {
-                        if ($null -ne $arg.index -and $null -ne $arg.type) {
-                            # See explanation above, though this is requesting info, not setting it. Slider value is returned in 'gain' property
-                            Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].gain"
-                            $return = @{
-                                Trigger = "A1Level"
-                                Value   = ($vmr.($arg.type)[$arg.index]).gain
+                        "GetVolume" {
+                            if ($null -ne $arg.index -and $null -ne $arg.type) {
+                                # See explanation above, though this is requesting info, not setting it. Slider value is returned in 'gain' property
+                                Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].gain"
+                                $return = @{
+                                    Trigger = "A1Level"
+                                    Value   = ($vmr.($arg.type)[$arg.index]).gain
+                                }
+                            }
+                        }
+                        "GetMode" {
+                            $return = switch ($vmr.bus[0].device.name) {
+                                "M-Track Quad ASIO Driver" {
+                                    "Speakers"
+                                }
+                                "Headphones (MOMENTUM 4 Stereo)" {
+                                    "Headphones"
+                                }
                             }
                         }
                     }
-                    "GetMode" {
-                        $return = switch ($vmr.bus[0].device.name) {
-                            "M-Track Quad ASIO Driver" {
-                                "Speakers"
-                            }
-                            "Headphones (MOMENTUM 4 Stereo)" {
-                                "Headphones"
-                            }
-                        }
+                    if ($null -ne $return) {
+                        # Thanks to tue queue this works predictably even when the arguments is actual array
+                        $q.TryAdd([PSCustomObject]@{
+                                To      = $message.From
+                                From    = "Voicemeeter"
+                                Payload = $return
+                            })
+                        $global:config.($message.From).DataWaiting = $true
                     }
-                }
-                if ($null -ne $return) {
-                    $q.TryAdd([PSCustomObject]@{
-                            To      = $message.From
-                            From    = "Voicemeeter"
-                            Payload = $return
-                        })
-                    $global:config.($message.From).DataWaiting = $true
                 }
             }
             else {
@@ -346,6 +411,8 @@ $functions = {
                             })
                         $global:config.Sender.DataWaiting = $true
                         $previousMode = $Mode
+                        Write-Information "Setting MacroButtons id 0 state to False"
+                        $vmr.button[0].state = $false
                     }
                 }
             }
@@ -431,6 +498,20 @@ $functions = {
                                             type  = "bus"
                                             index = 0
                                             level = $payload
+                                        }
+                                    }
+                                })
+                            $global:config.Voicemeeter.DataWaiting = $true
+                        }
+                        "$com/meta/soundmode" {
+                            Write-Information "- Voicemeeter mode change to $payload, queuing payload"
+                            $q.TryAdd([PSCustomObject]@{
+                                    To      = "Voicemeeter"
+                                    From    = "Listener"
+                                    Payload = @{
+                                        command = "SwitchMode"
+                                        args    = @{
+                                            Mode = $payload
                                         }
                                     }
                                 })
