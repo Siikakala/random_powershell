@@ -49,20 +49,24 @@ It achieves several things:
   * When I'm using PS Remote Play, another scene triggers so there's minimal reflections to my display
     * PS5 is connected to my monitor, so, no speakers. I'm actually using that input in display while controller input and audio output is going through remote play
 * Automating PC audio
-  * Enforcing maximum volume level between 21:30 - 08:00.
-    * SmartThings gets info about A1 level and output device with MQTT.
-      * Output level is numeric device without unit information for easier parsing (message is in form `<numeric value> <unit>`)
-        * Receives and sends information with different topics. If update came from MQTT, won't send updates about the changes -> loop protected
-      * Output device in SmartThings is just switch - on means speakers, off means headphones
-        * Changes can happen from ST, causing change on PC; or on PC, causing update to device state
-    * If volume is higher than -24dB and output is through speakers, lower it to -24dB.
-    * -24dB is low enough that I cannot hear the speakers to other room with door open.
-    * This has already helped me to not blast music too loudly as I switch between headphones and speakers with Voicemeeter macro buttons, which are loading certain configurations. Speaker configuration has default A1 volume of -9dB which is perfect during daytime.
   * Handling speaker power
     * I have active speakers, which are connected to smart outlet and if I'm listening with headphones, the power will be turned off. And back on when output is switched to speakers
+    * The integration is rather ":D" - MQTT changes virtual switch state, SmartThings hub syncs the state to cloud, Google notices the change and changes Tuya socket state accordingly, Tuya sends push message to outlets.
+      * So: MQTT -> SmartThings Cloud -> Google Cloud -> Tuya Cloud -> Socket
+      * The delay is still just around 1-2 seconds. Thanks Tuya for integrating with only Amazon and Google with this particular product 😩
   * Triggering MacroButtons
     * MQTT message can switch between headphones and speakers by triggering macrobutton loading correct Voicemeeter configuration
     * Process watcher can lower music level when I'm playing
+  * Enforcing maximum volume level between 21:30 - 08:00.
+    * SmartThings gets info about A1 level and output device with MQTT.
+      * Both these virtual devices receives and sends information with different topics. If update came from MQTT, won't send updates about the changes -> loop protected
+      * Changes can happen from SmartThings, causing change on PC; or on PC, causing update to device state in SmartThings
+      * Output level is numeric device without unit information for easier parsing (message is in form `<numeric value> <unit>`)
+      * Output device in SmartThings is just switch - on means speakers, off means headphones. Message payload uses strings "Speakers" and "Headphones" however - those are just mapped to switch states both sending and receiving.
+    * If volume is higher than -24dB and output is through speakers, lower it to -24dB.
+    * -24dB is low enough that I cannot hear the speakers to other room with door open.
+    * This has already helped me to not blast music too loudly as I switch between headphones and speakers with Voicemeeter macro buttons, which are loading certain configurations. Speaker configuration has default A1 volume of -9dB which is perfect during daytime.
+      * The speaker power handling has noticeable delay (MQTT->Cloud->Cloud->Cloud->Socket), so the order of operations and threading has actually changed volume already when the speakers actually get power.
 
 ### Plans
 I want to implement these in some point:
