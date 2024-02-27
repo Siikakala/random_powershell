@@ -14,7 +14,7 @@ Utility running on my main computer running Windows 10. There's several parts:
 ### Demo video
 !! Contains "Hey Google, switch to speakers" !!
 
-[![Demo](demo_preview.png)](https://1drv.ms/v/s!AtrhTUkXQvo3jLYy0zr72UuOfBoUGw?e=xVfv7I)
+[![Demo](demo_preview.jpg)](https://1drv.ms/v/s!AtrhTUkXQvo3jLYy0zr72UuOfBoUGw?e=xVfv7I)
 (click to open)
 
 ### What they do?
