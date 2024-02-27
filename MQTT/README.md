@@ -11,10 +11,11 @@ Utility running on my main computer running Windows 10. There's several parts:
 * Voicemeeter Potato handler
 * Process Watcher
 
-### Demo
+### Demo video
 !! Contains "Hey Google, switch to speakers" !!
 
-[![Demo](demo_preview.png)](https://onedrive.live.com/embed?resid=37FA4217494DE1DA%21203571&authkey=!AFq_GSW0lpGik-4)
+[![Demo](demo_preview.png)](https://1drv.ms/v/s!AtrhTUkXQvo3jLYy0zr72UuOfBoUGw?e=xVfv7I)
+(click to open)
 
 ### What they do?
 - Main thread handles the script output and thread lifecycling
