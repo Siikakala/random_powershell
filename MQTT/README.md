@@ -39,33 +39,38 @@ read-only and I wanted bi-directional communications between the threads. So, to
 in actual communications on purpose, as I also wanted to know how to handle single queue in multi-threaded environment.
 
 ### Ok, but what does it _do_?
+First of all, only one thing relies on cloud, due to bad purchase. Everything else is handled locally and doesn't require internet.
+
 It achieves several things:
 
 * Automating light scenes
   * Uses LAN Triggers as Process Watcher is using this mainly
     * Separate triggers when process is detected running and when it stops
-    * Also saves up device count - one LAN Trigger device in SmartThings can handle 19 different triggers, so, 9 on-off triggers with one spare trigger
+    * Also saves up device count - one LAN Trigger device in SmartThings can handle 19 different triggers, so, 19 scenes (selected by script so it could be really elaborate actually) or 9 on-off triggers with one spare trigger
   * When OBS is running, certain scene triggers so there's enough light to my face
   * When I'm using PS Remote Play or Geforce NOW, another scene triggers so there's minimal reflections to my display. Same scene is triggered when obs stops running - for now.
 * Automating PC audio
   * Handling speaker power
     * I have active speakers, which are connected to smart outlet and if I'm listening with headphones, the power will be turned off. And back on when output is switched to speakers
-    * The integration is rather ":D" - MQTT changes virtual switch state, SmartThings hub syncs the state to cloud, Google notices the change and changes Tuya socket state accordingly, Tuya sends push message to outlets.
+    * The only integration requiring cloud and it's rather ":D" - MQTT changes virtual switch state, SmartThings hub syncs the state to cloud, Google notices the change and changes Tuya socket state accordingly, Tuya sends push message to outlets.
       * So: MQTT -> SmartThings Cloud -> Google Cloud -> Tuya Cloud -> Socket
       * The delay is still just around 1-3 seconds. Thanks Tuya for integrating with only Amazon and Google with this particular product 😩
+      * Despite of that it's surprisingly robust, very rare state change misses.
   * Triggering MacroButtons
     * MQTT message can switch between headphones and speakers by triggering macrobutton loading correct Voicemeeter configuration
-    * Process watcher can lower music level when I'm playing
+      * Dedicated handling due to button behaviour through API
+    * The gate trigger of a button can also be enabled or disabled
+    * Process watcher can lower music level when I'm playing and disable other triggers touching the level
+    * Can handle multiple buttons with one payload (using array)
   * Enforcing maximum volume level between 21:30 - 08:00.
     * SmartThings gets info about A1 level and output device with MQTT.
       * Both these virtual devices receives and sends information with different topics. If update came from MQTT, won't send updates about the changes -> loop protected
       * Changes can happen from SmartThings, causing change on PC; or on PC, causing update to device state in SmartThings
       * Output level is numeric device without unit information for easier parsing (message is in form `<numeric value> <unit>`)
       * Output device in SmartThings is just switch - on means speakers, off means headphones. Message payload uses strings "Speakers" and "Headphones" however - those are just mapped to switch states both sending and receiving.
-    * If volume is higher than -24dB and output is through speakers, lower it to -24dB.
-    * -24dB is low enough that I cannot hear the speakers to other room with door open.
-    * This has already helped me to not blast music too loudly as I switch between headphones and speakers with Voicemeeter macro buttons, which are loading certain configurations. Speaker configuration has default A1 volume of -9dB which is perfect during daytime.
-      * The speaker power handling has noticeable delay (MQTT->Cloud->Cloud->Cloud->Socket), so the order of operations and threading has actually changed volume already when the speakers actually get power.
+    * If volume is higher than -24dB and output is through speakers, lower it to -24dB (=low enough during night, I live in flat aparment)
+    * Switch between headphones and speakers with Voicemeeter macro buttons are loading certain configurations. Speaker configuration has default A1 volume of -9dB which is perfect during daytime.
+      * The speaker power handling has noticeable delay (MQTT->Cloud->Cloud->Cloud->Socket, see speaker power above), so the order of operations and threading has usually changed volume already when the speakers actually get power. Though as it is a race - most of the time SmartThings has ordered the lower volume already before Tuya has turned the socket on.
 
 ### Plans
 I want to implement these in some point:
@@ -77,6 +82,6 @@ I want to implement these in some point:
 These needs some love:
 * Voicemeeter thread ~~might~~ does not initialize properly if the thread has died once - gracefully or not
   * Prevents audio automations
-  * Also requires to kill the whole process, with it's pane/console window to get working again
+  * Also requires to kill the whole process, with it's pane/console window to get working again - maybe there's a other possibilities to handle it?
 * Harmonize data payload structures - voicemeeter returns data in different form than what it receives.
 * Thread heartbeat? Threads hug sometimes it seems.
