@@ -84,4 +84,4 @@ These needs some love:
   * Prevents audio automations
   * Also requires to kill the whole process, with it's pane/console window to get working again - maybe there's a other possibilities to handle it?
 * Harmonize data payload structures - voicemeeter returns data in different form than what it receives.
-* Thread heartbeat? Threads hug sometimes it seems.
+* Thread heartbeat? Threads hung sometimes it seems.
