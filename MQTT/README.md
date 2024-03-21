@@ -46,14 +46,13 @@ It achieves several things:
     * Separate triggers when process is detected running and when it stops
     * Also saves up device count - one LAN Trigger device in SmartThings can handle 19 different triggers, so, 9 on-off triggers with one spare trigger
   * When OBS is running, certain scene triggers so there's enough light to my face
-  * When I'm using PS Remote Play, another scene triggers so there's minimal reflections to my display
-    * PS5 is connected to my monitor, so, no speakers. I'm actually using that input in display while controller input and audio output is going through remote play
+  * When I'm using PS Remote Play or Geforce NOW, another scene triggers so there's minimal reflections to my display. Same scene is triggered when obs stops running - for now.
 * Automating PC audio
   * Handling speaker power
     * I have active speakers, which are connected to smart outlet and if I'm listening with headphones, the power will be turned off. And back on when output is switched to speakers
     * The integration is rather ":D" - MQTT changes virtual switch state, SmartThings hub syncs the state to cloud, Google notices the change and changes Tuya socket state accordingly, Tuya sends push message to outlets.
       * So: MQTT -> SmartThings Cloud -> Google Cloud -> Tuya Cloud -> Socket
-      * The delay is still just around 1-2 seconds. Thanks Tuya for integrating with only Amazon and Google with this particular product 😩
+      * The delay is still just around 1-3 seconds. Thanks Tuya for integrating with only Amazon and Google with this particular product 😩
   * Triggering MacroButtons
     * MQTT message can switch between headphones and speakers by triggering macrobutton loading correct Voicemeeter configuration
     * Process watcher can lower music level when I'm playing
