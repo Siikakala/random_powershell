@@ -59,7 +59,7 @@ It achieves several things:
   * Triggering MacroButtons
     * MQTT message can switch between headphones and speakers by triggering macrobutton loading correct Voicemeeter configuration
       * Dedicated handling due to button behaviour through API
-    * The gate trigger of a button can also be enabled or disabled
+    * The state and/or gate trigger of a button can be enabled or disabled (enabled state = pushed, latching)
     * Process watcher can lower music level when I'm playing and disable other triggers touching the level
     * Can handle multiple buttons with one payload (using array)
   * Enforcing maximum volume level between 21:30 - 08:00.
