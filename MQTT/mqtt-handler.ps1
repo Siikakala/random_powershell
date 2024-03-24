@@ -73,37 +73,37 @@ $functions = {
         }
         $DisableDuck = @(
             @{
-                Button = 4
+                Button  = 4
                 Trigger = $false
             },
             @{
-                Button = 5
+                Button  = 5
                 Trigger = $false
             },
             @{
-                Button = 14
+                Button  = 14
                 Trigger = $false
             },
             @{
-                Button = 23
+                Button  = 23
                 Trigger = $false
             }
         )
         $EnableDuck = @(
             @{
-                Button = 4
+                Button  = 4
                 Trigger = $true
             },
             @{
-                Button = 5
+                Button  = 5
                 Trigger = $true
             },
             @{
-                Button = 14
+                Button  = 14
                 Trigger = $true
             },
             @{
-                Button = 23
+                Button  = 23
                 Trigger = $true
             }
         )
@@ -126,10 +126,11 @@ $functions = {
             }
         }
         if ($VMcall.args.Button -ne -1) {
-            if($HandleMusicDucking.IsPresent){
-                if($call -match "^.*?-start$"){
+            if ($HandleMusicDucking.IsPresent) {
+                if ($call -match "^.*?-start$") {
                     $argsArray = $DisableDuck + $VMcall.args
-                }else{
+                }
+                else {
                     $argsArray = $EnableDuck + $VMcall.args
                 }
                 $VMcall.args = $argsArray
@@ -150,8 +151,6 @@ $functions = {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
-        $threadstarted = Get-Date
-        $RegisteredEvents = @()
         $WatcherProcesses = @(
             @{
                 Process = "obs64"
@@ -221,33 +220,18 @@ $functions = {
             }
             $ProcsWereRunning = $ProcsRunning
 
-            if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
-                Write-Information "Thread age over a day - cleaning up and quiting."
-                if ($isAdmin) {
-                    foreach ($id in $RegisteredEvents) {
-                        Get-EventSubscriber -SourceIdentifier $id | Unregister-Event
-                        Get-Event -SourceIdentifier $id | Remove-Event
-                    }
-                }
-                break
-            }
+            # I'm still alive!
+            $threadconf.Heartbeat = Get-Date
             Start-Sleep -Milliseconds 250
         }
         if (-not $threadconf.Enabled) {
-            Write-Information "Exit requested - cleaning up and quiting."
-            if ($isAdmin) {
-                foreach ($id in $RegisteredEvents) {
-                    Get-EventSubscriber -SourceIdentifier $id | Unregister-Event
-                    Get-Event -SourceIdentifier $id | Remove-Event
-                }
-            }
+            Write-Information "Exit requested - quiting."
         }
     }
     function Invoke-VoicemeeterControl {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
-        $threadstarted = Get-Date
         Import-Module Voicemeeter
         Write-Information "Connecting to Voicemeeter Potato - Thread enabled: $($threadconf.Enabled)"
         $vmr = Connect-Voicemeeter -Kind "potato"
@@ -416,11 +400,9 @@ $functions = {
                     }
                 }
             }
+            # I'm still alive!
+            $threadconf.Heartbeat = Get-Date
             Start-Sleep -Milliseconds 100
-            if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
-                Write-Information "Thread age over a day - trying to quit."
-                break
-            }
         }
         Disconnect-Voicemeeter
         if (-not $threadconf.Enabled) {
@@ -434,7 +416,6 @@ $functions = {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
-        $threadstarted = Get-Date
         switch ($payload.command) {
             default {}
         }
@@ -445,7 +426,6 @@ $functions = {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $payload = $null
-        $threadstarted = Get-Date
         Write-Information "Connecting to MQTT - Thread enabled: $($threadconf.Enabled)"
         C:\mqttx\mqttx.exe sub --config C:\mqttx\mqttx-cli-config.json | ForEach-Object -Process {
             # The json object is pretty printed and pipe is consuming the data row-by-row so gather the whole message first
@@ -523,14 +503,12 @@ $functions = {
                     Write-Information "Got unprocessable data:`n$data"
                 }
             }
-            if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
-                Write-Information "Thread age over a day - trying to quit."
-                break
-            }
             if (-not $threadconf.Enabled) {
                 Write-Information "Exit requested - trying to quit."
                 break
             }
+            # I'm still alive!
+            $threadconf.Heartbeat = Get-Date
         }
         Write-Information "Disconnected"
     }
@@ -539,7 +517,6 @@ $functions = {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $conf = Get-Content c:\mqttx\mqttx-cli-config.json -Raw | ConvertFrom-Json
-        $threadstarted = Get-Date
         $stopwatch = [System.Diagnostics.Stopwatch]::new()
         $previousA1Level = -60
         Write-Information "Starting sender thread - Thread enabled: $($threadconf.Enabled)"
@@ -610,21 +587,18 @@ $functions = {
                 # Sleep handling
                 $stopwatch.Stop()
                 $offset -= $stopwatch.ElapsedMilliseconds
-                if (((Get-Date) - $threadstarted).TotalDays -gt 1) {
-                    Write-Information "Thread age over a day - breaking out to free resources."
-                    break outer
-                }
-                else {
-                    Write-Debug "  [$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: loop $i, sleeping ${offset}ms"
-                    if ($offset -gt 0) {
-                        Start-Sleep -Milliseconds $offset
-                    }
+                Write-Debug "  [$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: loop $i, sleeping ${offset}ms"
+                if ($offset -gt 0) {
+                    Start-Sleep -Milliseconds $offset
                 }
 
                 if (-not $threadconf.Enabled) {
                     Write-Information "Exit requested - breaking outer look."
                     break outer
                 }
+
+                # I'm still alive!
+                $threadconf.Heartbeat = Get-Date
             }
         }
         # There's tiiiiiny race condition - if the exit request has gone past the inner loop for the last time BUT main loop hasn't yet started new, you might drop out without output
@@ -663,21 +637,25 @@ $Config = [hashtable]::Synchronized(@{
             Enabled     = $true
             Function    = "Invoke-Sender"
             DataWaiting = $false
+            Heartbeat   = $null
         }
         Receiver       = @{
             Enabled     = $true
             Function    = "Invoke-Listener"
             DataWaiting = $false
+            Heartbeat   = $null
         }
         Voicemeeter    = @{
             Enabled     = $true
             Function    = "Invoke-VoicemeeterControl"
             DataWaiting = $false
+            Heartbeat   = $null
         }
         ProcessWatcher = @{
             Enabled     = $true
             Function    = "Invoke-ProcessWatcher"
             DataWaiting = $false
+            Heartbeat   = $null
         }
     })
 $Queue = [System.Collections.Concurrent.ConcurrentQueue[psobject]]::new()
@@ -702,7 +680,9 @@ while ($true) {
             Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, starting clean-up")
             $ctrlc = $true
             Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop within 5s")
-            $ChildJobs.Keys | ForEach-Object { $Config.$_.Enabled = $false }
+            foreach ($thread in $ChildJobs.Keys) {
+                $Config.$thread.Enabled = $false
+            }
             Start-Sleep -Seconds 5
             Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
             $ChildJobs.Keys | ForEach-Object {
@@ -713,7 +693,7 @@ while ($true) {
         }
     }
     $msgs = ""
-    # Check and process child job messages
+    # Check and process child job messages and if the process had hung
     foreach ($thread in $ChildJobs.Keys) {
         $infos = $false
         $infos = $ChildJobs.$thread.instance.Streams.Information
@@ -727,6 +707,12 @@ while ($true) {
             $ChildJobs.$thread.instance.Streams.ClearStreams()
         }
         catch {}
+
+        if ($null -ne $Config.$thread.Heartbeat -and $Config.$thread.Heartbeat -lt (Get-Date).AddMinutes(-1)) {
+            # Thanks to MQTT heartbeat, even receiver thread will update it's heartbeat often enough - or then the broker is nonfuntional
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Detected hung thread $thread - latest heartbeat $([System.Math]::Round(((Get-Date) - $Config.$thread.Heartbeat).TotalMinutes, 1)) minutes ago. Disposing")
+            $ChildJobs.$thread.instance.Dispose()
+        }
     }
 
     foreach ($thread in $ChildJobs.Keys) {
