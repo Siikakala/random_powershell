@@ -607,7 +607,7 @@ $functions = {
         }
     }
     Write-Information "Starting $thread - invoking $($config.$thread.Function)"
-    $config.$threadconf.Heartbeat = Get-Date
+    $config.$thread.Heartbeat = Get-Date
     Invoke-Expression $config.$thread.Function
 }
 $pool = [runspacefactory]::CreateRunspacePool(1, 4)
