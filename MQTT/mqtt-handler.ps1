@@ -153,22 +153,25 @@ $functions = {
         $message = $null
         $WatcherProcesses = @(
             @{
-                Process = "obs64"
-                Actions = @("Use-LanTrigger")
+                Process       = "obs64"
+                Actions       = @("Use-LanTrigger")
+                UnlessRunning = @()
             },
             @{
-                Process = "RemotePlay"
-                Actions = @(
+                Process       = "RemotePlay"
+                Actions       = @(
                     "Use-LanTrigger"
                     "Set-VoicemeeterButton -HandleMusicDucking -caller ProcessWatcher -call"
                 )
+                UnlessRunning = @("obs64")
             },
             @{
-                Process = "GeforceNow"
-                Actions = @(
+                Process       = "GeforceNow"
+                Actions       = @(
                     "Use-LanTrigger"
                     "Set-VoicemeeterButton -HandleMusicDucking -caller ProcessWatcher -call"
                 )
+                UnlessRunning = @("obs64")
             }
         )
         $ProcsWereRunning = @()
@@ -195,21 +198,33 @@ $functions = {
                         $ProcsSeen += $proc.Process
                     }
                     if ($proc.Process -notin $ProcsWereRunning) {
-                        Write-Information "$($proc.Process) started running - running Actions"
-                        foreach ($action in $proc.Actions) {
-                            Write-Information " - Calling '$action $($proc.Process)-start'"
-                            Invoke-Expression "$action $($proc.Process)-start"
+                        $blockers = $proc.UnlessRunning | Where-Object { $_ -in $ProcsWereRunning }
+                        if ($blockers.count -gt 0) {
+                            Write-Information "$($proc.Process) started running - found proceses running which are in UnlessRunning ($($blockers -join ", ")), SKIPPING ACTIONS"
+                        }
+                        else {
+                            Write-Information "$($proc.Process) started running - running Actions"
+                            foreach ($action in $proc.Actions) {
+                                Write-Information " - Calling '$action $($proc.Process)-start'"
+                                Invoke-Expression "$action $($proc.Process)-start"
+                            }
                         }
                     }
                 }
                 else {
                     if ($proc.Process -notin $ProcsWereRunning -and $proc.Process -in $ProcsSeen) {
-                        Write-Information "$($proc.Process) has stopped - running Actions"
-                        foreach ($action in $proc.Actions) {
-                            Write-Information " - Calling '$action $($proc.Process)-stop'"
-                            Invoke-Expression "$action $($proc.Process)-stop"
+                        $blockers = $proc.UnlessRunning | Where-Object { $_ -in $ProcsWereRunning }
+                        if ($blockers.count -gt 0) {
+                            Write-Information "$($proc.Process) has stopped - found proceses running which are in UnlessRunning ($($blockers -join ", ")), SKIPPING ACTIONS"
                         }
-                        # Removing items from array is bit annoying, so.. This is also faster if the array is big, which is isn't.
+                        else {
+                            Write-Information "$($proc.Process) has stopped - running Actions"
+                            foreach ($action in $proc.Actions) {
+                                Write-Information " - Calling '$action $($proc.Process)-stop'"
+                                Invoke-Expression "$action $($proc.Process)-stop"
+                            }
+                        }
+                        # Removing items from array is bit annoying, so.. This is also faster if the array is big, which it isn't.
                         $ProcsSeen = $ProcsSeen | ForEach-Object { if ($_ -ne $proc.Process) { $_ } }
                         if ($null -eq $ProcsSeen) {
                             # None of the processes are running so re-initializing array
