@@ -31,22 +31,22 @@ $functions = {
         $uriTemplate = "http://172.20.1.225:8090/{0}/trigger"
         $uri = switch ($which) {
             "obs64-start" {
-                $uriTemplate -f "tennoji_process_obs-run"
+                $uriTemplate -f "tennoji_scene-webcam"
             }
             "obs64-stop" {
-                $uriTemplate -f "tennoji_process_obs-stop"
+                $uriTemplate -f "tennoji_scene-computer"
             }
             "RemotePlay-start" {
-                $uriTemplate -f "tennoji_process_remoteplay-run"
+                $uriTemplate -f "tennoji_scene-computer"
             }
             "RemotePlay-stop" {
-                $uriTemplate -f "tennoji_process_remoteplay-stop"
+                $uriTemplate -f "tennoji_scene-computer"
             }
             "GeforceNOW-start" {
-                $uriTemplate -f "tennoji_process_gfnow-run"
+                $uriTemplate -f "tennoji_scene-computer"
             }
             "GeforceNOW-stop" {
-                $uriTemplate -f "tennoji_process_gfnow-stop"
+                $uriTemplate -f "tennoji_scene-computer"
             }
             "Mode-Speakers" {
                 $uriTemplate -f "Tennoji_speakers-on"
