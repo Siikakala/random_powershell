@@ -43,10 +43,12 @@ First of all, only one thing relies on cloud, due to bad purchase. Everything el
 
 It achieves several things:
 
+* Suspend machine with MQTT message
 * Automating light scenes
   * Uses LAN Triggers as Process Watcher is using this mainly
     * Separate triggers when process is detected running and when it stops
     * Also saves up device count - one LAN Trigger device in SmartThings can handle 19 different triggers, so, 19 scenes (selected by script so it could be really elaborate actually) or 9 on-off triggers with one spare trigger
+      * Currently 2 scenes and 1 on-off trigger pair (for speakers)
   * When OBS is running, certain scene triggers so there's enough light to my face
   * When I'm using PS Remote Play or Geforce NOW, another scene triggers so there's minimal reflections to my display. Same scene is triggered when obs stops running - for now.
 * Automating PC audio
@@ -54,7 +56,7 @@ It achieves several things:
     * I have active speakers, which are connected to smart outlet and if I'm listening with headphones, the power will be turned off. And back on when output is switched to speakers
     * The only integration requiring cloud and it's rather ":D" - MQTT changes virtual switch state, SmartThings hub syncs the state to cloud, Google notices the change and changes Tuya socket state accordingly, Tuya sends push message to outlets.
       * So: MQTT -> SmartThings Cloud -> Google Cloud -> Tuya Cloud -> Socket
-      * The delay is still just around 1-3 seconds. Thanks Tuya for integrating with only Amazon and Google with this particular product 😩
+      * The delay is around 2-3 seconds. Thanks Tuya for integrating with only Amazon and Google with this particular product 😩
       * Despite of that it's surprisingly robust, very rare state change misses.
   * Triggering MacroButtons
     * MQTT message can switch between headphones and speakers by triggering macrobutton loading correct Voicemeeter configuration
@@ -74,14 +76,11 @@ It achieves several things:
 
 ### Plans
 I want to implement these in some point:
-* Put PC to sleep with MQTT trigger
-  * Might require some shenanigans, depends on if it needs admin privileges or not
-* Send information if user is idle or not
-* Send information if there's active wake lock preventing PC to sleep
+* ~~Put PC to sleep with MQTT trigger~~ done
+* ~~Send information if there's active wake lock preventing PC to sleep~~ way too much hassle. Found some [examples](https://github.com/diversenok/Powercfg) but it still requires admin permissions and I don't want to run this script as admin. Combining info about speaker mode, user idle time and ping is enough to figure out if machine should be sleeping already or not.
 
 These needs some love:
 * Voicemeeter thread ~~might~~ does not initialize properly if the thread has died once - gracefully or not
   * Prevents audio automations
-  * Also requires to kill the whole process, with it's pane/console window to get working again - maybe there's a other possibilities to handle it?
+  * Currently not killing threads every 24 hours, which seems to help. Restart counter could also work, so that the script triggers ctrl-c internally if restart count of any thread is over, let's say, 20. I planned to run the script as a service in the first place so that would handle the process cycling and solve the problem - though it's not exactly elegant way of doing it. MQTT heartbeats are also noted by SmartThings so it's possible to give alert to my phone if my computer is answering to ping but the script hasn't send heartbeat in 5 minutes or something.
 * Harmonize data payload structures - voicemeeter returns data in different form than what it receives.
-* Thread heartbeat? Threads hung sometimes it seems.

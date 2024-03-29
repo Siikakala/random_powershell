@@ -144,7 +144,17 @@ $functions = {
             $global:config.Voicemeeter.DataWaiting = $true
         }
     }
-
+    function Invoke-ControlMessage {
+        param(
+            $command
+        )
+        switch($command){
+            "suspend" {
+                $PowerState = [System.Windows.Forms.PowerState]::Suspend
+                [System.Windows.Forms.Application]::SetSuspendState($PowerState, $false, $false) # powerstate, force, disable wake?
+            }
+        }
+    }
 
     <# THREAD FUNCTIONS #>
     function Invoke-ProcessWatcher {
@@ -425,17 +435,6 @@ $functions = {
         }
     }
 
-    <#
-    # Not implemented yet
-    function Invoke-GeneralControl {
-        $q = $global:queue
-        $threadconf = ($global:config).($global:thread)
-        $message = $null
-        switch ($payload.command) {
-            default {}
-        }
-    }
-    # #>
     function Invoke-Listener {
         $com = $global:ComputerName
         $q = $global:queue
@@ -463,12 +462,8 @@ $functions = {
                     Write-Information "Message to topic $($data.topic):`n$(($payload | Format-List | Out-String).Trim())"
                     switch ($data.topic) {
                         "$com/control" {
-                            Write-Information "- Control, queuing payload"
-                            $q.TryAdd([PSCustomObject]@{
-                                    To      = "control"
-                                    From    = "Listener"
-                                    Payload = $payload
-                                })
+                            Write-Information "- Control, calling 'Invoke-ControlMessage $payload'"
+                            Invoke-ControlMessage $payload
                         }
                         "$com/control/sound" {
                             Write-Information "- Voicemeeter, queuing payload"
