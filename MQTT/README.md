@@ -77,7 +77,7 @@ It achieves several things:
 ### Plans
 I want to implement these in some point:
 * ~~Put PC to sleep with MQTT trigger~~ done
-* ~~Send information if there's active wake lock preventing PC to sleep~~ way too much hassle. Found some [examples](https://github.com/diversenok/Powercfg) but it still requires admin permissions and I don't want to run this script as admin. Combining info about speaker mode, user idle time and ping is enough to figure out if machine should be sleeping already or not.
+* ~~Send information if there's active wake lock preventing PC to sleep~~ way too much hassle. Found some [examples](https://github.com/diversenok/Powercfg) but it still requires admin permissions and I don't want to run this script as admin.
 
 These needs some love:
 * Voicemeeter thread ~~might~~ does not initialize properly if the thread has died once - gracefully or not
