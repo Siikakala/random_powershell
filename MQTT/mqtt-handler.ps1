@@ -107,6 +107,7 @@ $functions = {
         switch ($command) {
             "suspend" {
                 $PowerState = [System.Windows.Forms.PowerState]::Suspend
+                Write-Information "[Invoke-ControlMessage] !! SUSPENDING SYSTEM !!"
                 [System.Windows.Forms.Application]::SetSuspendState($PowerState, $false, $false) # powerstate, force, disable wake?
             }
         }
