@@ -76,11 +76,10 @@ It achieves several things:
 
 ### Plans
 I want to implement these in some point:
-* ~~Put PC to sleep with MQTT trigger~~ done
 * ~~Send information if there's active wake lock preventing PC to sleep~~ way too much hassle. Found some [examples](https://github.com/diversenok/Powercfg) but it still requires admin permissions and I don't want to run this script as admin.
 
 These needs some love:
 * Voicemeeter thread ~~might~~ does not initialize properly if the thread has died once - gracefully or not
   * Prevents audio automations
-  * Currently not killing threads every 24 hours, which seems to help. Restart counter could also work, so that the script triggers ctrl-c internally if restart count of any thread is over, let's say, 20. I planned to run the script as a service in the first place so that would handle the process cycling and solve the problem - though it's not exactly elegant way of doing it. MQTT heartbeats are also noted by SmartThings so it's possible to give alert to my phone if my computer is answering to ping but the script hasn't send heartbeat in 5 minutes or something.
+  * Currently not killing threads every 24 hours, which seems to help. ~~Restart counter could also work, so that the script triggers ctrl-c internally if restart count of any thread is over, let's say, 20. I planned to run the script as a service in the first place so that would handle the process cycling and solve the problem - though it's not exactly elegant way of doing it. MQTT heartbeats are also noted by SmartThings so it's possible to give alert to my phone if my computer is answering to ping but the script hasn't send heartbeat in 5 minutes or something.~~ Did exactly that, time tells if it helped.
 * Harmonize data payload structures - voicemeeter returns data in different form than what it receives.
