@@ -60,7 +60,6 @@ It achieves several things:
       * Despite of that it's surprisingly robust, very rare state change misses.
   * Triggering MacroButtons
     * MQTT message can switch between headphones and speakers by triggering macrobutton loading correct Voicemeeter configuration
-      * Dedicated handling due to button behaviour through API
     * The state and/or gate trigger of a button can be enabled or disabled (enabled state = pushed, latching)
     * Process watcher can lower music level when I'm playing and disable other triggers touching the level
     * Can handle multiple buttons with one payload (using array)
@@ -82,4 +81,3 @@ These needs some love:
 * Voicemeeter thread ~~might~~ does not initialize properly if the thread has died once - gracefully or not
   * Prevents audio automations
   * Currently not killing threads every 24 hours, which seems to help. ~~Restart counter could also work, so that the script triggers ctrl-c internally if restart count of any thread is over, let's say, 20. I planned to run the script as a service in the first place so that would handle the process cycling and solve the problem - though it's not exactly elegant way of doing it. MQTT heartbeats are also noted by SmartThings so it's possible to give alert to my phone if my computer is answering to ping but the script hasn't send heartbeat in 5 minutes or something.~~ Did exactly that, time tells if it helped.
-* Harmonize data payload structures - voicemeeter returns data in different form than what it receives.
