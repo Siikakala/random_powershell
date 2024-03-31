@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     $ComputerName = "tennoji",
+    $ThreadMaxStarts = 20,
     [switch]
     $Confirm
 )
@@ -148,7 +149,7 @@ $functions = {
         param(
             $command
         )
-        switch($command){
+        switch ($command) {
             "suspend" {
                 $PowerState = [System.Windows.Forms.PowerState]::Suspend
                 [System.Windows.Forms.Application]::SetSuspendState($PowerState, $false, $false) # powerstate, force, disable wake?
@@ -649,24 +650,28 @@ $Config = [hashtable]::Synchronized(@{
             Function    = "Invoke-Sender"
             DataWaiting = $false
             Heartbeat   = $null
+            Starts      = 0
         }
         Receiver       = @{
             Enabled     = $true
             Function    = "Invoke-Listener"
             DataWaiting = $false
             Heartbeat   = $null
+            Starts      = 0
         }
         Voicemeeter    = @{
             Enabled     = $true
             Function    = "Invoke-VoicemeeterControl"
             DataWaiting = $false
             Heartbeat   = $null
+            Starts      = 0
         }
         ProcessWatcher = @{
             Enabled     = $true
             Function    = "Invoke-ProcessWatcher"
             DataWaiting = $false
             Heartbeat   = $null
+            Starts      = 0
         }
     })
 $Queue = [System.Collections.Concurrent.ConcurrentQueue[psobject]]::new()
@@ -688,20 +693,28 @@ while ($true) {
     if ([console]::KeyAvailable) {
         $key = [system.console]::readkey($true)
         if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C")) {
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, starting clean-up")
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, requesting quit")
             $ctrlc = $true
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop within 5s")
-            foreach ($thread in $ChildJobs.Keys) {
-                $Config.$thread.Enabled = $false
-            }
-            Start-Sleep -Seconds 5
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
-            $ChildJobs.Keys | ForEach-Object {
-                Write-Verbose ("{0,38}{1}" -f "", " - $_")
-                $ChildJobs.$_.instance.Stop()
-            }
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
         }
+    }
+    # This could be more elegant but it works, so, whatever
+    $TooManyStarts = $Config.keys | Where-Object{$Config.$_.Starts -gt $ThreadMaxStarts}
+    if($TooManyStarts.count -gt 0){
+        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Thread start count limit of $ThreadMaxStarts exceeded by $($TooManyStarts.count) thread$(if($TooManyStarts -ne 1){"s"}) - Requesting quit.")
+        $ctrlc = $true
+    }
+    if ($ctrlc) {
+        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop within 5s")
+        foreach ($thread in $ChildJobs.Keys) {
+            $Config.$thread.Enabled = $false
+        }
+        Start-Sleep -Seconds 5
+        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
+        $ChildJobs.Keys | ForEach-Object {
+            Write-Verbose ("{0,38}{1}" -f "", " - $_")
+            $ChildJobs.$_.instance.Stop()
+        }
+        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
     }
     $msgs = ""
     # Check and process child job messages and if the process had hung
@@ -732,7 +745,8 @@ while ($true) {
                 Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Cleaning up previous $thread thread")
                 $ChildJobs.$thread.instance.Dispose()
             }
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting $thread thread")
+            $Config.$thread.Starts += 1
+            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting $thread thread (start $($Config.$thread.Starts))")
             $ChildJobs.$thread.instance = [powershell]::Create()
             $ChildJobs.$thread.instance.RunspacePool = $pool
             $ChildJobs.$thread.instance.AddScript($functions) | Out-Null
