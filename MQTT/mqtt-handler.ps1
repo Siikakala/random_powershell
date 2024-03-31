@@ -60,8 +60,9 @@ $functions = {
             command = "SetButtonState"
             args    = foreach ($action in @($parameters.AudioButtonActions.$call)) {
                 @{
-                    Button = $action.Button
-                    State  = $action.State
+                    Button  = $action.Button
+                    State   = $action.State
+                    Trigger = $null
                 }
             }
         }
@@ -69,12 +70,14 @@ $functions = {
             @{
                 Button  = $button
                 Trigger = $false
+                State   = $null
             }
         }
         $EnableDuck = foreach ($button in $parameters.AudioDuckButtons) {
             @{
                 Button  = $button
                 Trigger = $true
+                State   = $null
             }
         }
         if ($VMcall.args.Button -ne -1) {
