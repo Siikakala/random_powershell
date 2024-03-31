@@ -8,6 +8,7 @@ param(
     [switch]
     $Confirm
 )
+[void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
 [console]::TreatControlCAsInput = $true
 if ($DebugPreference -eq "Inquire" -and -not $Confirm.IsPresent) {
     # -Debug present but -Confirm is not, suppress debug confirmations
