@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
-    $ComputerName = "tennoji",
+    [ValidateScript({ Test-Path $_ })]
+    [string]
+    $ParametersFile = ".\parameters.psd1",
+    [int]
     $ThreadMaxStarts = 20,
     [switch]
     $Confirm
@@ -16,46 +19,33 @@ if (-not (Test-Path C:\mqttx\mqttx.exe)) {
     exit
 }
 
+if ($ThreadMaxStarts -isnot [int]) {
+    $ThreadMaxStarts = 20
+}
+
+$paramkeys = "EdgeBridgeIP", "EdgeBridgePort", "AudioButtonActions", "AudioDuckButtons", "ComputerName", "AudioDevicesHeadphones", "ProcessesWatcher", "AudioDevicesSpeakers", "LanTriggers"
+$params = Import-PowerShellDataFile $ParametersFile
+if (($paramkeys | Where-Object { $_ -notin $params.keys }).count -gt 0) {
+    Write-Error "Parameter file doesn't have all required keys ($($paramkeys -join ", "))"
+    exit 2
+}
+
 $functions = {
     param(
         $thread,
         $config,
         $queue,
-        $ComputerName
+        $params
     )
     <# HELPERS #>
 
     function Use-LanTrigger {
         param($which)
+        $parameters = $global:params
         # This is calling Tod Austin's LanTrigger utility running on my rpi, which is triggering momentary virtual button presses in SmartThings, triggering automations
         # https://github.com/toddaustin07/lantrigger
-        $uriTemplate = "http://172.20.1.225:8090/{0}/trigger"
-        $uri = switch ($which) {
-            "obs64-start" {
-                $uriTemplate -f "tennoji_scene-webcam"
-            }
-            "obs64-stop" {
-                $uriTemplate -f "tennoji_scene-computer"
-            }
-            "RemotePlay-start" {
-                $uriTemplate -f "tennoji_scene-computer"
-            }
-            "RemotePlay-stop" {
-                $uriTemplate -f "tennoji_scene-computer"
-            }
-            "GeforceNOW-start" {
-                $uriTemplate -f "tennoji_scene-computer"
-            }
-            "GeforceNOW-stop" {
-                $uriTemplate -f "tennoji_scene-computer"
-            }
-            "Mode-Speakers" {
-                $uriTemplate -f "Tennoji_speakers-on"
-            }
-            "Mode-Headphones" {
-                $uriTemplate -f "Tennoji_speakers-off"
-            }
-        }
+        $uri = "http://{0}:{1}/{2}_{3}/trigger" -f $parameters.EdgeBridgeIP, $parameters.EdgeBridgePort, $parameters.ComputerName, ($parameters.LanTriggers.$which -join "-")
+        Write-Information "[Use-LanTrigger] Calling 'Invoke-WebRequest $uri -Method Post -DisableKeepAlive'"
         Invoke-WebRequest $uri -Method Post -DisableKeepAlive | Out-Null
     }
     function Set-VoicemeeterButton {
@@ -64,66 +54,27 @@ $functions = {
             $caller,
             [switch] $HandleMusicDucking
         )
+        $parameters = $global:params
         # This is just a wrapper for easier call handling
         $VMcall = @{
             command = "SetButtonState"
-            args    = @{
-                Button = -1
-                State  = $false
+            args    = foreach ($action in @($parameters.AudioButtonActions.$call)) {
+                @{
+                    Button = $action.Button
+                    State  = $action.State
+                }
             }
         }
-        $DisableDuck = @(
+        $DisableDuck = foreach ($button in $parameters.AudioDuckButtons) {
             @{
-                Button  = 4
-                Trigger = $false
-            },
-            @{
-                Button  = 5
-                Trigger = $false
-            },
-            @{
-                Button  = 14
-                Trigger = $false
-            },
-            @{
-                Button  = 23
+                Button  = $button
                 Trigger = $false
             }
-        )
-        $EnableDuck = @(
+        }
+        $EnableDuck = foreach ($button in $parameters.AudioDuckButtons) {
             @{
-                Button  = 4
+                Button  = $button
                 Trigger = $true
-            },
-            @{
-                Button  = 5
-                Trigger = $true
-            },
-            @{
-                Button  = 14
-                Trigger = $true
-            },
-            @{
-                Button  = 23
-                Trigger = $true
-            }
-        )
-        switch ($call) {
-            "RemotePlay-start" {
-                $VMcall.args.Button = 15 # Music to -15 dB
-                $VMcall.args.State = $true
-            }
-            "RemotePlay-stop" {
-                $VMcall.args.Button = 15
-                $VMcall.args.State = $false
-            }
-            "GeforceNOW-start" {
-                $VMcall.args.Button = 25 # Music to -25 dB
-                $VMcall.args.State = $true
-            }
-            "GeforceNOW-stop" {
-                $VMcall.args.Button = 25
-                $VMcall.args.State = $false
             }
         }
         if ($VMcall.args.Button -ne -1) {
@@ -159,32 +110,11 @@ $functions = {
 
     <# THREAD FUNCTIONS #>
     function Invoke-ProcessWatcher {
+        $parameters = $global:params
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
-        $WatcherProcesses = @(
-            @{
-                Process       = "obs64"
-                Actions       = @("Use-LanTrigger")
-                UnlessRunning = @()
-            },
-            @{
-                Process       = "RemotePlay"
-                Actions       = @(
-                    "Use-LanTrigger"
-                    "Set-VoicemeeterButton -HandleMusicDucking -caller ProcessWatcher -call"
-                )
-                UnlessRunning = @("obs64")
-            },
-            @{
-                Process       = "GeforceNow"
-                Actions       = @(
-                    "Use-LanTrigger"
-                    "Set-VoicemeeterButton -HandleMusicDucking -caller ProcessWatcher -call"
-                )
-                UnlessRunning = @("obs64")
-            }
-        )
+        $WatcherProcesses = $parameters.ProcessesWatcher
         $ProcsWereRunning = @()
         $ProcsSeen = @()
         while ($threadconf.Enabled) {
@@ -255,6 +185,7 @@ $functions = {
         }
     }
     function Invoke-VoicemeeterControl {
+        $parameters = $global:params
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
@@ -280,30 +211,6 @@ $functions = {
                 foreach ($arg in @($params)) {
                     # Typical case is that there's only one set of payload but this way the handling is identical regardless how much there was
                     switch ($message.payload.command.trim()) {
-                        "SwitchMode" {
-                            # Button state API calls are latching even with push buttons, so handling the both directions at once. Also reason why this is separate command.
-                            switch ($arg.Mode) {
-                                "Speakers" {
-                                    # This MacroButton's button loads Voicemeeter configuration with my M-Track ASIO driver as A1 output device, to which my speakers are connected to
-                                    Write-Information "Setting MacroButtons id 11 state to True for 100ms"
-                                    $vmr.button[11].state = $true
-                                    Start-Sleep -Milliseconds 100
-                                    $vmr.button[11].state = $false
-                                    Write-Information "Setting MacroButtons id 0 state to False"
-                                    $vmr.button[0].state = $false
-                                }
-                                "Headphones" {
-                                    # This MacroButton's button loads Voicemeeter configuration with my Bluetooth headphones as A1 output device. In the case headphones aren't connected,
-                                    # Voicemeeter ends up in engine error state and lets go all wake locks for audio devices, potentially allowing computer to sleep
-                                    Write-Information "Setting MacroButtons id 10 state to True for 100ms"
-                                    $vmr.button[10].state = $true
-                                    Start-Sleep -Milliseconds 100
-                                    $vmr.button[10].state = $false
-                                    Write-Information "Setting MacroButtons id 0 state to False"
-                                    $vmr.button[0].state = $false
-                                }
-                            }
-                        }
                         "SetButtonState" {
                             # With this approach you can either change button state or if it should act on trigger - or both. Both trigger and state are boooleans
                             # !! NOTE: THIS API CALL IS LATCHING EVEN IF THE BUTTON ITSELF ISN'T! You MUST set state back to false by yourself! !!
@@ -356,18 +263,27 @@ $functions = {
                                 # See explanation above, though this is requesting info, not setting it. Slider value is returned in 'gain' property
                                 Write-Information "Calling `$vmr.$($arg.type)[$($arg.index)].gain"
                                 $return = @{
-                                    Trigger = "A1Level"
-                                    Value   = ($vmr.($arg.type)[$arg.index]).gain
+                                    command = "ReturnVolume"
+                                    args    = @{
+                                        Trigger = "$($arg.type)$($arg.index)Level"
+                                        Value   = ($vmr.($arg.type)[$arg.index]).gain
+                                    }
                                 }
                             }
                         }
                         "GetMode" {
-                            $return = switch ($vmr.bus[0].device.name) {
-                                "M-Track Quad ASIO Driver" {
+                            $Mode = switch ($vmr.bus[0].device.name) {
+                                ($parameters.AudioDevicesSpeakers) {
                                     "Speakers"
                                 }
-                                "Headphones (MOMENTUM 4 Stereo)" {
+                                ($parameters.AudioDevicesHeadphones) {
                                     "Headphones"
+                                }
+                            }
+                            $return = @{
+                                command = "ReturnMode"
+                                args    = @{
+                                    Mode = $Mode
                                 }
                             }
                         }
@@ -381,54 +297,59 @@ $functions = {
                             })
                         $global:config.($message.From).DataWaiting = $true
                     }
+                    # Let's not process everything _too_ fast
+                    Start-Sleep -Milliseconds 50
                 }
             }
             else {
-                if ((Get-Date).Second % 2 -eq 0) {
-                    # Handle changes
-                    $A1Level = $vmr.bus[0].gain
-                    if ($A1Level -ne $previousA1Level -and $A1Level -ne -60) {
-                        Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
-                        $q.TryAdd([PSCustomObject]@{
-                                To      = "Sender"
-                                From    = "Voicemeeter"
-                                Payload = @{
-                                    Trigger = "A1Level"
+                # Handle changes - every 100ms if nothing in queue might be bit excessive but like I care.
+                $A1Level = $vmr.bus[0].gain
+                if ($A1Level -ne $previousA1Level -and $A1Level -ne -60) {
+                    Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
+                    $q.TryAdd([PSCustomObject]@{
+                            To      = "Sender"
+                            From    = "Voicemeeter"
+                            Payload = @{
+                                command = "ChangedVolume"
+                                args    = @{
+                                    Trigger = "bus0Level"
                                     Value   = $A1Level
                                 }
-                            })
-                        $global:config.Sender.DataWaiting = $true
-                        $previousA1Level = $A1Level
-                    }
+                            }
+                        })
+                    $global:config.Sender.DataWaiting = $true
+                    $previousA1Level = $A1Level
+                }
 
-                    $Mode = switch ($vmr.bus[0].device.name) {
-                        "M-Track Quad ASIO Driver" {
-                            "Speakers"
-                        }
-                        "Headphones (MOMENTUM 4 Stereo)" {
-                            "Headphones"
-                        }
+                $Mode = switch ($vmr.bus[0].device.name) {
+                    ($parameters.AudioDevicesSpeakers) {
+                        "Speakers"
                     }
-                    if ($Mode -ne $previousMode) {
-                        Write-Information "Mode changed $previousMode -> $Mode - informing Sender"
-                        $q.TryAdd([PSCustomObject]@{
-                                To      = "Sender"
-                                From    = "Voicemeeter"
-                                Payload = @{
-                                    Trigger = "Mode"
-                                    Value   = $Mode
+                    ($parameters.AudioDevicesHeadphones) {
+                        "Headphones"
+                    }
+                }
+                if ($Mode -ne $previousMode) {
+                    Write-Information "Mode changed $previousMode -> $Mode - informing Sender"
+                    $q.TryAdd([PSCustomObject]@{
+                            To      = "Sender"
+                            From    = "Voicemeeter"
+                            Payload = @{
+                                command = "ChangedMode"
+                                args    = @{
+                                    Mode = $Mode
                                 }
-                            })
-                        $global:config.Sender.DataWaiting = $true
-                        $previousMode = $Mode
-                        Write-Information "Setting MacroButtons id 0 state to False"
-                        $vmr.button[0].state = $false
-                    }
+                            }
+                        })
+                    $global:config.Sender.DataWaiting = $true
+                    $previousMode = $Mode
+                    Write-Information "Setting MacroButtons id 0 state to False"
+                    $vmr.button[0].state = $false
                 }
             }
             # I'm still alive!
             $threadconf.Heartbeat = Get-Date
-            Start-Sleep -Milliseconds 100
+            Start-Sleep -Milliseconds 200
         }
         Disconnect-Voicemeeter
         if (-not $threadconf.Enabled) {
@@ -437,7 +358,8 @@ $functions = {
     }
 
     function Invoke-Listener {
-        $com = $global:ComputerName
+        $parameters = $global:params
+        $com = $parameters.ComputerName
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $payload = $null
@@ -495,18 +417,8 @@ $functions = {
                             $global:config.Voicemeeter.DataWaiting = $true
                         }
                         "$com/meta/soundmode" {
-                            Write-Information "- Voicemeeter mode change to $payload, queuing payload"
-                            $q.TryAdd([PSCustomObject]@{
-                                    To      = "Voicemeeter"
-                                    From    = "Listener"
-                                    Payload = @{
-                                        command = "SwitchMode"
-                                        args    = @{
-                                            Mode = $payload
-                                        }
-                                    }
-                                })
-                            $global:config.Voicemeeter.DataWaiting = $true
+                            Write-Information "- Voicemeeter mode change, calling 'Set-VoicemeeterButton -call $payload -caller Receiver'"
+                            Set-VoicemeeterButton -call $payload -caller Receiver
                         }
                     }
                 }
@@ -524,7 +436,8 @@ $functions = {
         Write-Information "Disconnected"
     }
     function Invoke-Sender {
-        $com = $global:ComputerName
+        $parameters = $global:params
+        $com = $parameters.ComputerName
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $conf = Get-Content c:\mqttx\mqttx-cli-config.json -Raw | ConvertFrom-Json
@@ -550,7 +463,7 @@ $functions = {
                         $q.TryAdd($message)
                     }
                     else {
-                        Write-Information "Received message from $($message.From)"
+                        Write-Information "Received $($message.Payload.Command) from $($message.From)"
                         if ($q.IsEmpty) {
                             $threadconf.DataWaiting = $false
                         }
@@ -574,23 +487,25 @@ $functions = {
                     $global:config.Voicemeeter.DataWaiting = $true
                 }
                 if ($null -ne $message) {
-                    switch ($message.Payload.Trigger) {
-                        "A1Level" {
-                            if ($message.Payload.Value -ne $previousA1Level) {
-                                Write-Information "Sending MQTT message '$($message.Payload.Value)' to topic '$com/status/sound/A1Level'"
-                                c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload.Value | Out-Null
-                                $previousA1Level = $message.Payload.Value
-                            }
-                            else {
-                                Write-Information "A1 level stayed unchanged"
+                    switch -Regex ($message.Payload.Command) {
+                        "(Changed|Return)Volume" {
+                            if ($message.Payload.args.Trigger -eq "bus0Level") {
+                                if ($message.Payload.args.Value -ne $previousA1Level) {
+                                    Write-Information "Sending MQTT message '$($message.Payload.args.Value)' to topic '$com/status/sound/A1Level'"
+                                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload.args.Value | Out-Null
+                                    $previousA1Level = $message.Payload.args.Value
+                                }
+                                else {
+                                    Write-Information "A1 level stayed unchanged"
+                                }
                             }
                         }
-                        "Mode" {
-                            Write-Information "Sound mode changed to '$($message.Payload.Value)' - Calling actions"
-                            Write-Information " - Calling 'Use-LanTrigger Mode-$($message.Payload.Value)'"
-                            Use-LanTrigger "Mode-$($message.Payload.Value)"
-                            Write-Information " - Sending MQTT message '$($message.Payload.Value)' to topic '$com/status/sound/mode'"
-                            c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/mode" -m $message.Payload.Value | Out-Null
+                        "(Changed|Return)Mode" {
+                            Write-Information "Sound mode changed to '$($message.Payload.args.Mode)' - Calling actions"
+                            Write-Information " - Calling 'Use-LanTrigger Mode-$($message.Payload.args.Mode)'"
+                            Use-LanTrigger "Mode-$($message.Payload.args.Mode)"
+                            Write-Information " - Sending MQTT message '$($message.Payload.args.Mode)' to topic '$com/status/sound/mode'"
+                            c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/mode" -m $message.Payload.args.Mode | Out-Null
                         }
                     }
                 }
@@ -617,7 +532,7 @@ $functions = {
             Write-Information "Exiting"
         }
     }
-    Write-Information "Starting $thread - invoking $($config.$thread.Function)"
+    Write-Information "Starting $thread - loading parameters and invoking $($config.$thread.Function)"
     $config.$thread.Heartbeat = Get-Date
     Invoke-Expression $config.$thread.Function
 }
@@ -698,8 +613,8 @@ while ($true) {
         }
     }
     # This could be more elegant but it works, so, whatever
-    $TooManyStarts = $Config.keys | Where-Object{$Config.$_.Starts -gt $ThreadMaxStarts}
-    if($TooManyStarts.count -gt 0){
+    $TooManyStarts = $Config.keys | Where-Object { $Config.$_.Starts -gt $ThreadMaxStarts }
+    if ($TooManyStarts.count -gt 0) {
         Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Thread start count limit of $ThreadMaxStarts exceeded by $($TooManyStarts.count) thread$(if($TooManyStarts -ne 1){"s"}) - Requesting quit.")
         $ctrlc = $true
     }
@@ -751,10 +666,10 @@ while ($true) {
             $ChildJobs.$thread.instance.RunspacePool = $pool
             $ChildJobs.$thread.instance.AddScript($functions) | Out-Null
             $argslist = @{
-                thread       = $thread
-                queue        = $queue
-                config       = $Config
-                ComputerName = $ComputerName
+                thread = $thread
+                queue  = $queue
+                config = $Config
+                params = $params
             }
             $ChildJobs.$thread.instance.AddParameters($argslist) | Out-Null
             $ChildJobs.$thread.handle = $ChildJobs.$thread.instance.BeginInvoke()
