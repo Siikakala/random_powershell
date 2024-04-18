@@ -52,10 +52,19 @@ function Write-Log {
         $line
     )
     $file = $LogPath + "\" + $params.LogFilePrefix + (Get-Date).ToString($params.LogFileDateSyntax) + ".log"
-    try {
-        Add-Content -Path $file -Value $line -ErrorAction Stop
-    }
-    catch {}
+
+    $i = 0
+    do {
+        $failed = $false
+        try {
+            Add-Content -Path $file -Value $line -ErrorAction Stop
+        }
+        catch {
+            $failed = $true
+            Start-Sleep -Milliseconds 5
+        }
+        $i++
+    }while ($failed -and $i -lt 3)
     Write-Verbose $line
 }
 function Remove-OldLogs {
@@ -71,10 +80,10 @@ function Remove-OldLogs {
     $RetentionPeriod = (Get-Date).AddDays($Retention)
 
     # I hate that you can't use -Filter with Get-ChildItem for anything else than name.
-    Write-Verbose "Logpath: $($LogPath)"
+    Write-Log "[Remove-OldLogs] Logpath: $($LogPath)"
     Get-ChildItem -Path $LogPath -File | ForEach-Object -Process {
         if ($_.LastWriteTime -lt $RetentionPeriod) {
-            Write-Verbose "Removing: $_"
+            Write-Log "[Remove-OldLogs] Removing: $_"
             $_ | Remove-Item
         }
     }
