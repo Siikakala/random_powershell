@@ -64,7 +64,7 @@ function Write-Log {
             Start-Sleep -Milliseconds 5
         }
         $i++
-    }while ($failed -and $i -lt 3)
+    }while ($failed -and $i -lt 10)
     Write-Verbose $line
 }
 function Remove-OldLogs {
