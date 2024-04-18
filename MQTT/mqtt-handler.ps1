@@ -38,7 +38,7 @@ if (-not (Test-Path $params.LogPath -PathType Container)) {
 $LatestLogRotate = Get-Date -Date 0
 # Yeaaaah, there's other ways to detect and remove possible trailing slash but I find this most elegant. It also verifies the path second time.
 $LogPath = (Get-Item $params.LogPath).Target[0]
-if($null -eq $LogPath){
+if ($null -eq $LogPath) {
     Write-Error "Logpath null, please check"
     exit 4
 }
@@ -67,9 +67,14 @@ function Remove-OldLogs {
     }
     $RetentionPeriod = (Get-Date).AddDays($Retention)
 
-    # Feedback would be nice but.. NAAAAAH. I also hate that you can't use -Filter with Get-ChildItem for anything else than name. Where-Object isn't very performant but we should be dealing with low amount of files here so it *should* be fine.
+    # I hate that you can't use -Filter with Get-ChildItem for anything else than name.
     Write-Verbose "Logpath: $($LogPath)"
-    Get-ChildItem -Path $LogPath -File | Where-Object { $_.LastWriteTime -lt $RetentionPeriod } | ForEach-Object{Write-Verbose "Removing: $_"}# | Remove-Item
+    Get-ChildItem -Path $LogPath -File | ForEach-Object -Process {
+        if ($_.LastWriteTime -lt $RetentionPeriod) {
+            Write-Verbose "Removing: $_"
+            $_ | Remove-Item
+        }
+    }
 }
 
 $functions = {
