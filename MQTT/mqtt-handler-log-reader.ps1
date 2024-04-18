@@ -21,5 +21,7 @@ while(-not $ctrlc){
         Start-Sleep -Milliseconds 50
     }
     $reader | Stop-Job | Remove-Job
-    Write-Host "Day changed, reloading reader"
+    if(-not $ctrlc){
+        Write-Host "Day changed, reloading reader"
+    }
 }
