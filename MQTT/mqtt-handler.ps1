@@ -8,6 +8,7 @@ param(
     [switch]
     $Confirm
 )
+#region Init
 [void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
 [console]::TreatControlCAsInput = $true
 if ($DebugPreference -eq "Inquire" -and -not $Confirm.IsPresent) {
@@ -42,8 +43,8 @@ if ($null -eq $LogPath) {
     Write-Error "Logpath null, please check"
     exit 4
 }
-
-# Main loop only functions
+#endregion
+#region Main loop only functions
 function Write-Log {
     [CmdletBinding()]
     param(
@@ -88,7 +89,8 @@ function Remove-OldLogs {
         }
     }
 }
-
+#endregion
+#region Threads code block
 $functions = {
     param(
         $thread,
@@ -98,6 +100,7 @@ $functions = {
     )
     <# HELPERS #>
 
+    #region LanTrigger
     function Use-LanTrigger {
         param($which)
         $parameters = $global:params
@@ -107,6 +110,8 @@ $functions = {
         Write-Information "[Use-LanTrigger] Calling 'Invoke-WebRequest $uri -Method Post -DisableKeepAlive'"
         Invoke-WebRequest $uri -Method Post -DisableKeepAlive | Out-Null
     }
+    #endregion
+    #region Voicemeeter buttons
     function Set-VoicemeeterButton {
         param(
             $call,
@@ -158,6 +163,8 @@ $functions = {
             $global:config.Voicemeeter.DataWaiting = $true
         }
     }
+    #endregion
+    #region Control messages
     function Invoke-ControlMessage {
         param(
             $command
@@ -170,8 +177,10 @@ $functions = {
             }
         }
     }
+    #endregion
 
     <# THREAD FUNCTIONS #>
+    #region Process watcher
     function Invoke-ProcessWatcher {
         $parameters = $global:params
         $q = $global:queue
@@ -247,6 +256,8 @@ $functions = {
             Write-Information "Exit requested - quiting."
         }
     }
+    #endregion
+    #region Voicemeeter
     function Invoke-VoicemeeterControl {
         $parameters = $global:params
         $q = $global:queue
@@ -419,7 +430,8 @@ $functions = {
             Write-Information "Exit requested."
         }
     }
-
+    #endregion
+    #region Receiver
     function Invoke-Listener {
         $parameters = $global:params
         $com = $parameters.ComputerName
@@ -498,6 +510,8 @@ $functions = {
         }
         Write-Information "Disconnected"
     }
+    #endregion
+    #region Sender
     function Invoke-Sender {
         $parameters = $global:params
         $com = $parameters.ComputerName
@@ -595,10 +609,13 @@ $functions = {
             Write-Information "Exiting"
         }
     }
+    #endregion
     Write-Information "Starting $thread - loading parameters and invoking $($config.$thread.Function)"
     $config.$thread.Heartbeat = Get-Date
     Invoke-Expression $config.$thread.Function
 }
+#endregion
+#region Variable initialization
 $pool = [runspacefactory]::CreateRunspacePool(1, 4)
 $pool.open()
 $ChildJobs = @{
@@ -664,11 +681,12 @@ $Padding = @{
 $TimeStamp = { (Get-Date).toString("yyyy-MM-dd HH:mm:ss") }
 $OutputTemplate = "[{0}][{1,-14}] {2}"
 #$Streams = @("Debug", "Error", "Information", "Verbose", "Warning")
-
+#endregion
 #region Main loop
 Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", " !! STARTING MAIN THREAD !!")
 $ctrlc = $false
 while ($true) {
+    #region CTRL-C reading
     if ([console]::KeyAvailable) {
         $key = [system.console]::readkey($true)
         if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C")) {
@@ -676,6 +694,8 @@ while ($true) {
             $ctrlc = $true
         }
     }
+    #endregion
+    #region Log rotate and lifetime checks
     # Handle log rotating (roughly) once per day
     if ((Get-Date) -gt $LatestLogRotate.AddDays(1)) {
         Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Rotating logs")
@@ -704,7 +724,8 @@ while ($true) {
         }
         Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
     }
-
+    #endregion
+    #region Read thread output
     # Check and process child job messages and if the process had hung
     $msgs = ""
     foreach ($thread in $ChildJobs.Keys) {
@@ -721,7 +742,8 @@ while ($true) {
         }
         catch {}
     }
-
+    #endregion
+    #region Thread starter
     foreach ($thread in $ChildJobs.Keys) {
         $nothung = $true
         if ($null -ne $Config.$thread.Heartbeat -and $Config.$thread.Heartbeat -lt (Get-Date).AddMinutes(-1)) {
@@ -750,7 +772,7 @@ while ($true) {
             $ChildJobs.$thread.handle = $ChildJobs.$thread.instance.BeginInvoke()
         }
     }
-
+    #endregion
     if ($ctrlc) {
         Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Removing child threads and breaking main thread")
         foreach ($thread in $ChildJobs.Keys) {
