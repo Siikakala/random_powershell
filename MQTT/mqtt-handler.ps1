@@ -52,7 +52,10 @@ function Write-Log {
         $line
     )
     $file = $LogPath + "\" + $params.LogFilePrefix + (Get-Date).ToString($params.LogFileDateSyntax) + ".log"
-    Add-Content -Path $file -Value $line
+    try {
+        Add-Content -Path $file -Value $line -ErrorAction Stop
+    }
+    catch {}
     Write-Verbose $line
 }
 function Remove-OldLogs {
