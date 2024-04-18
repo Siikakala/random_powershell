@@ -24,11 +24,52 @@ if ($ThreadMaxStarts -isnot [int]) {
     $ThreadMaxStarts = 20
 }
 
-$paramkeys = "EdgeBridgeIP", "EdgeBridgePort", "AudioButtonActions", "AudioDuckButtons", "ComputerName", "AudioDevicesHeadphones", "ProcessesWatcher", "AudioDevicesSpeakers", "LanTriggers"
+$paramkeys = "LogPath", "LogFilePrefix", "LogFileDateSyntax", "LogRetentionDays", "EdgeBridgeIP", "EdgeBridgePort", "AudioButtonActions", "AudioDuckButtons", "ComputerName", "AudioDevicesHeadphones", "ProcessesWatcher", "AudioDevicesSpeakers", "LanTriggers"
 $params = Import-PowerShellDataFile $ParametersFile
-if (($paramkeys | Where-Object { $_ -notin $params.keys }).count -gt 0) {
+if ($paramkeys | Where-Object { $_ -notin $params.keys }) {
     Write-Error "Parameter file doesn't have all required keys ($($paramkeys -join ", "))"
     exit 2
+}
+if (-not (Test-Path $params.LogPath -PathType Container)) {
+    Write-Error "Log path '$($params.LogPath)' does not exist or access is denied!"
+    exit 3
+}
+# Initialize log rotating - this ensures it happens when script starts.
+$LatestLogRotate = Get-Date -Date 0
+# Yeaaaah, there's other ways to detect and remove possible trailing slash but I find this most elegant. It also verifies the path second time.
+$LogPath = (Get-Item $params.LogPath).Target[0]
+if($null -eq $LogPath){
+    Write-Error "Logpath null, please check"
+    exit 4
+}
+
+# Main loop only functions
+function Write-Log {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $line
+    )
+    $file = $LogPath + "\" + $params.LogFilePrefix + (Get-Date).ToString($params.LogFileDateSyntax) + ".log"
+    Add-Content -Path $file -Value $line
+    Write-Verbose $line
+}
+function Remove-OldLogs {
+    # "Rotate" isn't approved verb and we are actually removing things so, Remove- it is then
+
+    # There isn't "RemoveDays" - you add negative integer, hence thing madness. This also handles bad parameter input as it will give error if it's not a number AND converts & rounds it to integer if it's not
+    if ([int] $params.LogRetentionDays -gt 0) {
+        $Retention = 0 - [int] $params.LogRetentionDays
+    }
+    else {
+        $Retention = [int] $params.LogRetentionDays
+    }
+    $RetentionPeriod = (Get-Date).AddDays($Retention)
+
+    # Feedback would be nice but.. NAAAAAH. I also hate that you can't use -Filter with Get-ChildItem for anything else than name. Where-Object isn't very performant but we should be dealing with low amount of files here so it *should* be fine.
+    Write-Verbose "Logpath: $($LogPath)"
+    Get-ChildItem -Path $LogPath -File | Where-Object { $_.LastWriteTime -lt $RetentionPeriod } | ForEach-Object{Write-Verbose "Removing: $_"}# | Remove-Item
 }
 
 $functions = {
@@ -607,66 +648,78 @@ $TimeStamp = { (Get-Date).toString("yyyy-MM-dd HH:mm:ss") }
 $OutputTemplate = "[{0}][{1,-14}] {2}"
 #$Streams = @("Debug", "Error", "Information", "Verbose", "Warning")
 
-Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting main thread")
+#region Main loop
+Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting main thread")
 $ctrlc = $false
 while ($true) {
     if ([console]::KeyAvailable) {
         $key = [system.console]::readkey($true)
         if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C")) {
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, requesting quit")
+            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, requesting quit")
             $ctrlc = $true
         }
     }
+    # Handle log rotating (roughly) once per day
+    if ((Get-Date) -gt $LatestLogRotate.AddDays(1)) {
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Rotating logs")
+        # !! NOTE: This is blocking operation !!
+        Remove-OldLogs
+        $LatestLogRotate = Get-Date
+    }
+
     # This could be more elegant but it works, so, whatever
     $TooManyStarts = $Config.keys | Where-Object { $Config.$_.Starts -gt $ThreadMaxStarts }
     if ($TooManyStarts.count -gt 0) {
-        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Thread start count limit of $ThreadMaxStarts exceeded by $($TooManyStarts.count) thread$(if($TooManyStarts -ne 1){"s"}) - Requesting quit.")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Thread start count limit of $ThreadMaxStarts exceeded by $($TooManyStarts.count) thread$(if($TooManyStarts -ne 1){"s"}) - Requesting quit.")
         $ctrlc = $true
     }
+
     if ($ctrlc) {
-        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop within 5s")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop within 5s")
         foreach ($thread in $ChildJobs.Keys) {
             $Config.$thread.Enabled = $false
         }
         Start-Sleep -Seconds 5
-        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
         $ChildJobs.Keys | ForEach-Object {
-            Write-Verbose ("{0,38}{1}" -f "", " - $_")
+            Write-Log ("{0,38}{1}" -f "", " - $_")
             $ChildJobs.$_.instance.Stop()
         }
-        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
     }
-    $msgs = ""
+
     # Check and process child job messages and if the process had hung
+    $msgs = ""
     foreach ($thread in $ChildJobs.Keys) {
         $infos = $false
         $infos = $ChildJobs.$thread.instance.Streams.Information
         if ($infos) {
             $msgs = $infos -split "`n"
             foreach ($msg in $msgs) {
-                Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", $msg)
+                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", $msg)
             }
         }
         try {
             $ChildJobs.$thread.instance.Streams.ClearStreams()
         }
         catch {}
-
-        if ($null -ne $Config.$thread.Heartbeat -and $Config.$thread.Heartbeat -lt (Get-Date).AddMinutes(-1)) {
-            # Thanks to MQTT heartbeat, even receiver thread will update it's heartbeat often enough - or then the broker is nonfuntional
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Detected hung thread $thread - latest heartbeat $([System.Math]::Round(((Get-Date) - $Config.$thread.Heartbeat).TotalMinutes, 1)) minutes ago. Disposing")
-            $ChildJobs.$thread.instance.Dispose()
-        }
     }
 
     foreach ($thread in $ChildJobs.Keys) {
+        $nothung = $true
+        if ($null -ne $Config.$thread.Heartbeat -and $Config.$thread.Heartbeat -lt (Get-Date).AddMinutes(-1)) {
+            # Thanks to MQTT heartbeat, even receiver thread will update it's heartbeat often enough - or then the broker is nonfuntional
+            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Detected hung thread $thread - latest heartbeat $([System.Math]::Round(((Get-Date) - $Config.$thread.Heartbeat).TotalMinutes, 1)) minutes ago. Disposing")
+            $ChildJobs.$thread.instance.Dispose()
+            $nothung = $false
+        }
         if ($null -eq $ChildJobs.$thread.instance -or ($ChildJobs.$thread.instance.InvocationStateInfo.State.ToString() -ne "Running" -and $ctrlc -eq $false)) {
-            if ($null -ne $ChildJobs.$thread.instance.InvocationStateInfo.State) {
-                Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Cleaning up previous $thread thread")
+            if ($nothung -and $null -ne $ChildJobs.$thread.instance.InvocationStateInfo.State) {
+                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Cleaning up previous $thread thread")
                 $ChildJobs.$thread.instance.Dispose()
             }
             $Config.$thread.Starts += 1
-            Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting $thread thread (start $($Config.$thread.Starts))")
+            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting $thread thread (start $($Config.$thread.Starts))")
             $ChildJobs.$thread.instance = [powershell]::Create()
             $ChildJobs.$thread.instance.RunspacePool = $pool
             $ChildJobs.$thread.instance.AddScript($functions) | Out-Null
@@ -682,7 +735,7 @@ while ($true) {
     }
 
     if ($ctrlc) {
-        Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Removing child threads and breaking main thread")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Removing child threads and breaking main thread")
         foreach ($thread in $ChildJobs.Keys) {
             $ChildJobs.$thread.instance.Dispose()
         }
@@ -693,5 +746,6 @@ while ($true) {
     # Rather tight loop for ctrl-c handling
     Start-Sleep -Milliseconds 100
 }
-Write-Verbose ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Clean-up complete, exit.")
+Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Clean-up complete, exit.")
+#endregion
 exit 0

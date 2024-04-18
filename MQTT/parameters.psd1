@@ -1,5 +1,9 @@
 @{
     ComputerName           = "tennoji"
+    LogPath                = "E:\mqtt_handler-logs\"
+    LogFilePrefix          = "mqtt-handler_"
+    LogFileDateSyntax      = "yyyy-MM-dd"
+    LogRetentionDays       = 14
     EdgeBridgeIP           = "172.20.1.225"
     EdgeBridgePort         = "8090"
     LanTriggers            = @{
