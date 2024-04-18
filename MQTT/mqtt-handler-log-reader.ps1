@@ -7,7 +7,7 @@ while (-not $ctrlc) {
     $date = Get-Date
     $reader = Start-Job -ScriptBlock {
         param($FilePrefix, $DateSyntax)
-        Get-Content "$FilePrefix$((Get-Date).tostring($DateSyntax)).log" -Wait
+        Get-Content "$FilePrefix$((Get-Date).tostring($DateSyntax)).log" -Wait -Tail 100
     } -ArgumentList $StaticLogFile, $params.LogFileDateSyntax
     while ((Get-Date).day -eq $date.day) {
         if ([console]::KeyAvailable) {
