@@ -58,7 +58,7 @@ function Write-Log {
 function Remove-OldLogs {
     # "Rotate" isn't approved verb and we are actually removing things so, Remove- it is then
 
-    # There isn't "RemoveDays" - you add negative integer, hence thing madness. This also handles bad parameter input as it will give error if it's not a number AND converts & rounds it to integer if it's not
+    # There isn't "RemoveDays" - you add negative integer, hence this madness. This also handles bad parameter input as it will give error if it's not a number AND converts & rounds it to integer if it's not
     if ([int] $params.LogRetentionDays -gt 0) {
         $Retention = 0 - [int] $params.LogRetentionDays
     }
