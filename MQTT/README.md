@@ -81,3 +81,8 @@ These needs some love:
 * Voicemeeter thread ~~might~~ does not initialize properly if the thread has died once - gracefully or not
   * Prevents audio automations
   * Currently not killing threads every 24 hours, which seems to help. ~~Restart counter could also work, so that the script triggers ctrl-c internally if restart count of any thread is over, let's say, 20. I planned to run the script as a service in the first place so that would handle the process cycling and solve the problem - though it's not exactly elegant way of doing it. MQTT heartbeats are also noted by SmartThings so it's possible to give alert to my phone if my computer is answering to ping but the script hasn't send heartbeat in 5 minutes or something.~~ Did exactly that, time tells if it helped.
+
+## mqtt-handler-log-reader.ps1
+Quick'n'dirty reader for the mqtt-handler.ps1
+
+As the logs are rotated by day and the day is part of the filename, you need to restart `get-content -wait` each time day changes. I don't want to do that so wrote little something which is doing that for me :DD It actually reads log location and date syntax from the parameters file and the parameter file name is only hardcoding it contains. It even kills the listener job when you press ctrl-c. Yay, even more threading ":D". And because of that, the output of the logfile is bit stuttery if you are reading the log during the day as the reader loop has 50ms sleep in the end of each iteration.
