@@ -1,7 +1,16 @@
+<!-- omit from toc -->
 # MQTT shenanigans
 I want locally control my main PC thru MQTT. You can find scripts for that here.
 
 They depend on MQTTX cli client, which you can download from [MQTTX cli website](https://mqttx.app/cli#download)
+
+- [mqtt-handler.ps1](#mqtt-handlerps1)
+  - [Demo video](#demo-video)
+  - [What they do?](#what-they-do)
+  - [Threads? Really?](#threads-really)
+  - [Ok, but what does it _do_?](#ok-but-what-does-it-do)
+  - [Plans](#plans)
+- [mqtt-handler-log-reader.ps1](#mqtt-handler-log-readerps1)
 
 ## mqtt-handler.ps1
 Utility running on my main computer running Windows 10. There's several parts:
