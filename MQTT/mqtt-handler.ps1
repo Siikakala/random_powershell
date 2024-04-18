@@ -499,14 +499,14 @@ $functions = {
         $previousA1Level = -60
         Write-Information "Starting sender thread - Thread enabled: $($threadconf.Enabled)"
         :outer while ($threadconf.Enabled) {
-            for ($i = 0; $i -lt 150; $i++) {
+            for ($i = 0; $i -lt 300; $i++) {
                 # Extremely hack-y way of doing things in intervals but whatever, I regret nothing! x)
-                # One complete while($true) loop takes 5 mintes, and these actions are taken in roughly once per two secnds. Different actions during it takes a bit of time so using
-                # stopwatch and 2 second "offset" in milliseconds to adjust the sleep time at the end
+                # One complete while($true) loop takes 5 minutes, and these actions are taken in roughly once per second. Different actions during it takes a bit of time so using
+                # stopwatch and 1 second "offset" in milliseconds to adjust the sleep time at the end
                 $stopwatch.Restart()
-                $offset = 2000
+                $offset = 1000
                 $message = $null
-                if ($i % 10 -eq 0) {
+                if ($i % 20 -eq 0) {
                     #This happens once in 20 seconds
                     Write-Information "Sending heartbeat to MQTT"
                     c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") | Out-Null
@@ -523,7 +523,7 @@ $functions = {
                         }
                     }
                 }
-                if ($i % 30 -eq 0) {
+                if ($i % 60 -eq 0) {
                     # This happens once a minute
                     Write-Information "Requesting current A1 level from Voicemeeter"
                     $call = @{
