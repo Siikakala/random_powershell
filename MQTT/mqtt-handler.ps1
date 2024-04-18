@@ -654,7 +654,7 @@ $OutputTemplate = "[{0}][{1,-14}] {2}"
 #$Streams = @("Debug", "Error", "Information", "Verbose", "Warning")
 
 #region Main loop
-Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting main thread")
+Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", " !! STARTING MAIN THREAD !!")
 $ctrlc = $false
 while ($true) {
     if ([console]::KeyAvailable) {
