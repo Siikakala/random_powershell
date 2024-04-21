@@ -18,7 +18,7 @@
     }
     AudioDevicesSpeakers   = "M-Track Quad ASIO Driver"
     AudioDevicesHeadphones = "Headphones (MOMENTUM 4 Stereo)"
-    AudioDuckButtons       = @(4, 5, 14, 23)
+    AudioDuckButtons       = @(4, 5, 14, 20, 23)
     AudioButtonActions     = @{
         "Speakers"         = @(
             @{
