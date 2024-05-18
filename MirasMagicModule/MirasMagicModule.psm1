@@ -282,6 +282,10 @@ function Remove-StringDiacritic {
 }
 
 Function Get-AzureConnection {
+    <#
+    .SYNOPSIS
+        Check and get/change Azure connection and correct context. Can handle the different principal connections
+    #>
     [CmdletBinding(DefaultParameterSetName = "Interactive")]
     param(
         [Parameter(ParameterSetName = "Interactive")]
@@ -441,6 +445,13 @@ Function Get-AzureConnection {
 }
 
 Function Get-User {
+    <#
+    .SYNOPSIS
+        Abstraction function to enable different backends for getting user from domain.
+
+    .DESCRIPTION
+        This function enables simpler querying of users by utilizing splatting according to script requirements without too complex logic in the script itself
+    #>
     [CmdletBinding(DefaultParameterSetName = "Local")]
     param(
         [Parameter(Mandatory)]
@@ -547,6 +558,13 @@ Function Get-User {
     return $User
 }
 Function Get-GroupMember {
+    <#
+    .SYNOPSIS
+        Abstraction function to enable different backends for getting group members from domain.
+
+    .DESCRIPTION
+        This function enables simpler querying of group mmebers by utilizing splatting according to script requirements without too complex logic in the script itself
+    #>
     [CmdletBinding(DefaultParameterSetName = "Local")]
     param(
         [Parameter(Mandatory)]
@@ -649,6 +667,7 @@ Function FilterUPN {
     <#
     .SYNOPSIS
     Basically as Where-Object, but with enough data, it's orders of magnitude faster. See the comments in cases for Where-Object example.
+    With enough data will meet threshold of on-the-fly compiling, which is the main reason for the performance.
 
     .NOTES
     Yes, the amount of different ParameterSets is pure madness but this filter is rather versatile so ¯\_(ツ)_/¯
@@ -755,7 +774,7 @@ Function FilterUPN {
             "reverse-invert-array" {
                 # !! NOTE: this doesn't care the type of $array - it's just an object, even if it's typically string despite variable name.
                 if ($pipe.$field -notcontains $array) {
-                    # Where-Object {$_.field -contains $array}
+                    # Where-Object {$_.field -notcontains $array}
                     $pipe
                 }
                 break
@@ -793,6 +812,10 @@ Function FilterUPN {
 }
 
 Function Invoke-ApiQuery {
+    <#
+    .SYNOPSIS
+    As Invoke-RestMethod but parses and returns the response if web request returned 4xx or 5xx error, unlike Invoke-RestMethod
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -831,6 +854,10 @@ Function Invoke-ApiQuery {
 }
 
 Function New-HttpQueryUri {
+    <#
+    .SYNOPSIS
+    Generate URI for GET request with query parameters.
+    #>
     param(
         [Parameter(Mandatory)]
         [Hashtable]
@@ -855,6 +882,10 @@ Function New-HttpQueryUri {
 }
 
 Function Test-DCConnectivity {
+    <#
+    .SYNOPSIS
+    Resolve DC DNS address and try to get test user with provided credentials, returning IP address if user was found.
+    #>
     param(
         [Parameter(Mandatory)]
         [string]
@@ -898,6 +929,10 @@ Function Test-DCConnectivity {
 }
 
 Function Write-Info {
+    <#
+    .SYNOPSIS
+    Syntax is almost identical to string formater, but print to information stream and prefix it with timestmap. Supports intentation with spaces.
+    #>
     param(
         [int]
         $intentation = 0,
@@ -912,5 +947,9 @@ Function Write-Info {
 }
 
 Function Get-Timestamp {
+    <#
+    .SYNOPSIS
+    Returns [<timestamp>] with format of yyyy-MM-dd HH:mm:ss.fff
+    #>
     return "[$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss.fff"))]"
 }
