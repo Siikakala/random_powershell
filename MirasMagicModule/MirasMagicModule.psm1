@@ -209,37 +209,6 @@ function Search-SubnetPingAliveStatus {
     }
 }
 
-
-function Write-Standard () {
-    <#
-    .SYNOPSIS
-    Write output with fixed length strings, using fill character, added to the end. No newline in the end.
-
-    .PARAMETER message
-    Message to output before fill characters
-
-    .PARAMETER fill
-    Which character will be used as fill character. Defaults to .
-
-    .PARAMETER standardwidth
-    How long the strings should be. Defaults to 60 characters
-    #>
-    param(
-        [string]
-        $message,
-        [string]
-        $fill = ".",
-        [int]
-        $standardwidth = 60
-    )
-    Write-Host $message -NoNewline
-    for ($i; $i -le ($standardwidth - $message.Length); $i++) {
-        Write-Host $fill -NoNewline
-    }
-}
-
-
-
 function Get-Remote () {
     <#
     .SYNOPSIS
