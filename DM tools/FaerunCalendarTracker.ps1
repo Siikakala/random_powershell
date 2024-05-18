@@ -70,7 +70,7 @@ Add one day to the current date. Note: Script will not produce any output to the
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = "Set")]
-    [ValidatePattern("(?<Date>(?<Year>[-]?\d{1,4})(-(?<Month>[012]{0,1}\d{1})-(?<Day>[0123]{0,1}\d{1})|([ ]?(?<SpecialDay>[[:alpha:][:punct:][:space:]]*))))[ ]?(?<Time>(?<Hour>[0123]{0,1}\d):(?<Minute>[0-5]\d))?")] 
+    [ValidatePattern("(?<Date>(?<Year>[-]?\d{1,4})(-(?<Month>[012]{0,1}\d{1})-(?<Day>[0123]{0,1}\d{1})|([ ]?(?<SpecialDay>[[:alpha:][:punct:][:space:]]*))))[ ]?(?<Time>(?<Hour>[0123]{0,1}\d):(?<Minute>[0-5]\d))?")]
     [String]
     $Date,
     [Parameter(Mandatory = $false, ParameterSetName = "Adjust")]
@@ -133,7 +133,7 @@ $SpecialDays = @{
     "Greengrass"        = @{Day = 122; After = 4 }
     "Midsummer"         = @{Day = 213; After = 7 }
     "Shieldmeet"        = @{Day = 214; After = 7 }
-    "Highharvestide"    = @{Day = 244; After = 9 }
+    "Highharvestide"    = @{Day = 275; After = 9 }
     "Feast Of The Moon" = @{Day = 335; After = 11 }
 }
 
@@ -141,7 +141,7 @@ Write-Verbose "Initializing functions"
 
 Function New-FaerunDateHash {
     param(
-        [String]    
+        [String]
         $Date,
         [Switch]
         $WaterdeepFlavour
@@ -149,9 +149,9 @@ Function New-FaerunDateHash {
     Write-Verbose "FUNC: Initialising variables"
     # As all 4 equinoxes have set days, defining now. Notation: month-day
     $equinoxes = @{
-        "3-19"  = "Spring Equinox" 
+        "3-19"  = "Spring Equinox"
         "6-20"  = "Summer Solstice"
-        "9-21"  = "Autumn Equinox" 
+        "9-21"  = "Autumn Equinox"
         "12-20" = "Winter Solstice"
     }
 
@@ -193,7 +193,7 @@ Function New-FaerunDateHash {
         $ValueArray = $equinoxes.Values + $SpecialDays.Keys
     }
     $RegexSpecialDays = $ValueArray -join "|"
-    
+
     Write-Verbose "FUNC: Parsing date with Regex"
     # Utilizing automatic $Matches variable. Setting output to null as this regex is identical to the ValidatePattern. I'm using "week", whereas Faerûnian would call it tenday
     $Date -match "(?<Date>(?<Year>[-]?\d{1,4})(-(?<Month>[012]{0,1}\d{1})-(?<Day>[0123]{0,1}\d{1})|([ ]?(?<SpecialDay>$($RegexSpecialDays)))))[ ]?(?<Time>(?<Hour>[0123]?\d):(?<Minute>[0-5]?\d))?" | Out-Null
@@ -235,7 +235,7 @@ Function New-FaerunDateHash {
             # Bit hack-y way of dropping the preceding zeros but..
             $CurrentFestival = ($WaterdeepFestivals.GetEnumerator() | Where-Object { $_.Value -contains "$([int]$Matches.Month)-$([int]$Matches.Day)" }).Name
         }
-        else { 
+        else {
             $CurrentFestival = $equinoxes.$("$([int]$Matches.Month)-$([int]$Matches.Day)")
         }
         $DateHash = @{
@@ -255,7 +255,7 @@ Function New-FaerunDateHash {
             ShortDate  = $null
             Normalized = $null
         }
-        
+
         if ($null -ne $Matches.Time) {
             Write-Verbose "FUNC: Found time '$($Matches.Time)'"
             $DateHash.Hour = $Matches.Hour
@@ -293,7 +293,7 @@ Function New-FaerunDateHash {
             23 { "Nightfall" }
         }
         $DateHash.TimeOfDay = $TimeOfDay
-        
+
         Write-Verbose "FUNC: Populating hashtable"
         if (-not $Special) {
             $DateHash.Month = $Matches.Month
@@ -455,9 +455,9 @@ if ($PSCmdlet.ParameterSetName -eq "Adjust") {
     }
 
     # Calculate the relative change
-    $TimeDifference = New-TimeSpan (Get-Date -Hour $DateHash.Hour -Minute $DateHash.Minute -Second 0 -Millisecond 0) $reference 
+    $TimeDifference = New-TimeSpan (Get-Date -Hour $DateHash.Hour -Minute $DateHash.Minute -Second 0 -Millisecond 0) $reference
     Write-Verbose "Time difference $($TimeDifference.TotalDays) days. Calculating day of the year."
-    
+
     # Calculate the day in year in the Harptos calendar
     $DaysInPastMonths = ($DateHash.Month - 1) * 30
     if ($DateHash.Day -match "\d+") {
