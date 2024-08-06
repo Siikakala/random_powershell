@@ -953,3 +953,67 @@ Function Get-Timestamp {
     #>
     return "[$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss.fff"))]"
 }
+
+function Get-SiteSubnets {
+    <#
+    .SYNOPSIS
+    Gets AD Sites and returns convenient hashtable. Called by Get-Site if not supplied.
+    #>
+    $sites = Get-ADReplicationSubnet -Filter * -Properties Name, Site
+
+    $siteData = @{}
+
+    foreach ($site in $sites) {
+        # Split range into the address and the CIDR notation
+        [String] $CIDRAddress = $site.Name.Split('/')[0]
+        [int] $CIDRBits = $site.Name.Split('/')[1]
+
+        # Address from range and the search address are converted to Int32 and the full mask is calculated from the CIDR notation.
+        [int] $BaseAddress = [System.BitConverter]::ToInt32((([System.Net.IPAddress]::Parse($CIDRAddress)).GetAddressBytes()), 0)
+        [int] $Mask = [System.Net.IPAddress]::HostToNetworkOrder(-1 -shl ( 32 - $CIDRBits))
+        $MaskStart = ($BaseAddress -band $Mask)
+
+        $siteName = (($site.Site -split ",")[0] -split "=")[1]
+        $siteData.Add($site.Name, @{Check = $MaskStart; Mask = $Mask; Name = $siteName }) | Out-Null
+    }
+
+    return $siteData
+}
+
+function Get-Site {
+    <#
+    .SYNOPSIS
+    Discover AD Computer site by it's IP address in the domain. Designed to be piped from Get-ADComputer -Properties IPv4Address
+    #>
+    param(
+        [parameter(ValueFromPipeline, Mandatory)]
+        $com,
+        $siteData = $null
+    )
+    Begin {
+        if ($null -eq $siteData) {
+            $siteData = Get-SiteSubnets
+        }
+    }
+    Process {
+        $sitename = $null
+        if ($null -ne $com.IPv4Address) {
+            try {
+                [int] $Address = [System.BitConverter]::ToInt32(([System.Net.IPAddress]::Parse($com.IPv4Address).GetAddressBytes()), 0)
+
+                $sitename = foreach ($site in $siteData.Keys) {
+                    # Determine whether the address is in the range.
+                    if ($siteData.$site.Check -eq ($Address -band $siteData.$site.Mask)) {
+                        $siteData.$site.Name
+                        break
+                    }
+                }
+                if ($null -ne $sitename) {
+                    $com | Add-Member -MemberType NoteProperty -Name Site -Value $sitename -Force
+                }
+            }
+            catch {}
+        }
+        return $com
+    }
+}
