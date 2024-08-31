@@ -376,7 +376,7 @@ $functions = {
                 }
             }
 
-            # Handle changes - every 100ms might be bit excessive but like I care.
+            # Handle changes - every 200ms might be bit excessive but like I care.
             $A1Level = $vmr.bus[0].gain
             if ($A1Level -ne $previousA1Level -and $A1Level -ne -60) {
                 Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
