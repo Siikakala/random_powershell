@@ -375,52 +375,52 @@ $functions = {
                     Start-Sleep -Milliseconds 50
                 }
             }
-            else {
-                # Handle changes - every 100ms if nothing in queue might be bit excessive but like I care.
-                $A1Level = $vmr.bus[0].gain
-                if ($A1Level -ne $previousA1Level -and $A1Level -ne -60) {
-                    Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
-                    $q.TryAdd([PSCustomObject]@{
-                            To      = "Sender"
-                            From    = "Voicemeeter"
-                            Payload = @{
-                                command = "ChangedVolume"
-                                args    = @{
-                                    Trigger = "bus0Level"
-                                    Value   = $A1Level
-                                }
-                            }
-                        })
-                    $global:config.Sender.DataWaiting = $true
-                    $previousA1Level = $A1Level
-                }
 
-                $Mode = switch ($vmr.bus[0].device.name) {
-                    ($parameters.AudioDevicesSpeakers) {
-                        "Speakers"
-                    }
-                    ($parameters.AudioDevicesHeadphones) {
-                        "Headphones"
-                    }
-                }
-                if ($Mode -ne $previousMode) {
-                    Write-Information "Mode changed $previousMode -> $Mode - informing Sender"
-                    $q.TryAdd([PSCustomObject]@{
-                            To      = "Sender"
-                            From    = "Voicemeeter"
-                            Payload = @{
-                                command = "ChangedMode"
-                                args    = @{
-                                    Mode = $Mode
-                                }
+            # Handle changes - every 100ms might be bit excessive but like I care.
+            $A1Level = $vmr.bus[0].gain
+            if ($A1Level -ne $previousA1Level -and $A1Level -ne -60) {
+                Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
+                $q.TryAdd([PSCustomObject]@{
+                        To      = "Sender"
+                        From    = "Voicemeeter"
+                        Payload = @{
+                            command = "ChangedVolume"
+                            args    = @{
+                                Trigger = "bus0Level"
+                                Value   = $A1Level
                             }
-                        })
-                    $global:config.Sender.DataWaiting = $true
-                    $previousMode = $Mode
-                    Write-Information "Setting MacroButtons id 0 state to False"
-                    $vmr.button[0].state = $false
+                        }
+                    })
+                $global:config.Sender.DataWaiting = $true
+                $previousA1Level = $A1Level
+            }
+
+            $Mode = switch ($vmr.bus[0].device.name) {
+                    ($parameters.AudioDevicesSpeakers) {
+                    "Speakers"
+                }
+                    ($parameters.AudioDevicesHeadphones) {
+                    "Headphones"
                 }
             }
+            if ($Mode -ne $previousMode) {
+                Write-Information "Mode changed $previousMode -> $Mode - informing Sender"
+                $q.TryAdd([PSCustomObject]@{
+                        To      = "Sender"
+                        From    = "Voicemeeter"
+                        Payload = @{
+                            command = "ChangedMode"
+                            args    = @{
+                                Mode = $Mode
+                            }
+                        }
+                    })
+                $global:config.Sender.DataWaiting = $true
+                $previousMode = $Mode
+                Write-Information "Setting MacroButtons id 0 state to False"
+                $vmr.button[0].state = $false
+            }
+
             # I'm still alive!
             $threadconf.Heartbeat = Get-Date
             Start-Sleep -Milliseconds 200
