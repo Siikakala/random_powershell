@@ -8,11 +8,11 @@
     EdgeBridgePort         = "8090"
     LanTriggers            = @{
         "obs64-start"      = @("scene", "webcam")
-        "obs64-stop"       = @("scene", "computer")
+        "obs64-stop"       = @("scene", "candy")
         "RemotePlay-start" = @("scene", "computer")
-        "RemotePlay-stop"  = @("scene", "computer")
+        "RemotePlay-stop"  = @("scene", "candy")
         "GeforceNOW-start" = @("scene", "computer")
-        "GeforceNOW-stop"  = @("scene", "computer")
+        "GeforceNOW-stop"  = @("scene", "candy")
         "Mode-Speakers"    = @("speakers", "on")
         "Mode-Headphones"  = @("speakers", "off")
     }
