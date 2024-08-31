@@ -59,7 +59,8 @@ It achieves several things:
     * Also saves up device count - one LAN Trigger device in SmartThings can handle 19 different triggers, so, 19 scenes (selected by script so it could be really elaborate actually) or 9 on-off triggers with one spare trigger
       * Currently 2 scenes and 1 on-off trigger pair (for speakers)
   * When OBS is running, certain scene triggers so there's enough light to my face
-  * When I'm using PS Remote Play or Geforce NOW, another scene triggers so there's minimal reflections to my display. Same scene is triggered when obs stops running - for now.
+  * When I'm using PS Remote Play or Geforce NOW, another scene triggers so there's minimal reflections to my display. Unless OBS is running, which blocks the triggers.
+  * When (all) app(s) have stopped, trigger fancier scene.
 * Automating PC audio
   * Handling speaker power
     * I have active speakers, which are connected to smart outlet and if I'm listening with headphones, the power will be turned off. And back on when output is switched to speakers
@@ -89,7 +90,7 @@ I want to implement these in some point:
 These needs some love:
 * Voicemeeter thread ~~might~~ does not initialize properly if the thread has died once - gracefully or not
   * Prevents audio automations
-  * Currently not killing threads every 24 hours, which seems to help. ~~Restart counter could also work, so that the script triggers ctrl-c internally if restart count of any thread is over, let's say, 20. I planned to run the script as a service in the first place so that would handle the process cycling and solve the problem - though it's not exactly elegant way of doing it. MQTT heartbeats are also noted by SmartThings so it's possible to give alert to my phone if my computer is answering to ping but the script hasn't send heartbeat in 5 minutes or something.~~ Did exactly that, time tells if it helped.
+  * Currently not killing threads every 24 hours, which seems to help. ~~Restart counter could also work, so that the script triggers ctrl-c internally if restart count of any thread is over, let's say, 20. I planned to run the script as a service in the first place so that would handle the process cycling and solve the problem - though it's not exactly elegant way of doing it. MQTT heartbeats are also noted by SmartThings so it's possible to give alert to my phone if my computer is answering to ping but the script hasn't send heartbeat in 5 minutes or something.~~ Did exactly that, ~~time tells if it helped~~ which did the trick. Time to convert the script as service. The counter could be even less than 20.
 
 ## mqtt-handler-log-reader.ps1
 Quick'n'dirty reader for the mqtt-handler.ps1 logs
