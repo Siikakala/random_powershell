@@ -193,8 +193,11 @@ $functions = {
     }
 
     function Receive-MQTTMessage {
-        param($queue,$config)
+        param($EventObject)
         # This is callback handler
+        $parameters = $global:params
+        $com = $parameters.ComputerName
+        $q = $global:queue
         $data = @{
             topic   = $EventObject.SourceEventArgs.Topic
             payload = [System.Text.Encoding]::ASCII.GetString($EventObject.SourceEventArgs.Message)
@@ -209,18 +212,47 @@ $functions = {
             $payload = $data.payload
         }
         if (-not [string]::IsNullOrWhiteSpace($payload)) {
-            $queue.TryAdd([PSCustomObject]@{
-                    To      = "MQTTClient"
-                    From    = "MQTTClient"
-                    Payload = @{
-                        command = "IncomingMQTTMessage"
-                        args    = @{
-                            topic   = $data.topic
-                            payload = $payload
-                        }
-                    }
-                })
-            $config.MQTTClient.DataWaiting = $true
+            $topic = $data.topic#$message.Payload.args.topic
+            #$payload = $message.Payload.args.payload
+            Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
+            switch ($topic) {
+                "$com/control" {
+                    Write-Information "- Control, calling 'Invoke-ControlMessage $payload'"
+                    Invoke-ControlMessage $payload
+                }
+                "$com/control/sound" {
+                    Write-Information "- Voicemeeter, queuing payload"
+                    $q.TryAdd([PSCustomObject]@{
+                            To      = "Voicemeeter"
+                            From    = "MQTTClient"
+                            Payload = $payload
+                        })
+                    $global:config.Voicemeeter.DataWaiting = $true
+                }
+                "$com/heartbeat" {
+                    Write-Information "- Heartbeat"
+                }
+                "$com/meta/mainvolume" {
+                    Write-Information "- Voicemeeter A1 volume control, queuing payload"
+                    $q.TryAdd([PSCustomObject]@{
+                            To      = "Voicemeeter"
+                            From    = "MQTTClient"
+                            Payload = @{
+                                command = "SetVolume"
+                                args    = @{
+                                    type  = "bus"
+                                    index = 0
+                                    level = $payload
+                                }
+                            }
+                        })
+                    $global:config.Voicemeeter.DataWaiting = $true
+                }
+                "$com/meta/soundmode" {
+                    Write-Information "- Voicemeeter mode change, calling 'Set-VoicemeeterButton -call $payload -caller Receiver'"
+                    Set-VoicemeeterButton -call $payload -caller Receiver
+                }
+            }
         }
     }
     #endregion
@@ -570,7 +602,7 @@ $functions = {
             try {
                 $Session = Connect-MQTTBroker -Hostname $parameters.MQTTBroker -Credential $parameters.MqttCredential
                 $SourceIdentifier = [guid]::NewGuid()
-                Register-ObjectEvent -InputObject $Session -EventName MqttMsgPublishReceived -SourceIdentifier $SourceIdentifier -Action { Receive-MQTTMessage -queue $global:queue -config $global:config }
+                Register-ObjectEvent -InputObject $Session -EventName MqttMsgPublishReceived -SourceIdentifier $SourceIdentifier
 
                 foreach ($topic in $parameters.MQTTTopics) {
                     $Session.Subscribe($Topic, 0) | Out-Null
@@ -590,6 +622,13 @@ $functions = {
                             }
                         }
                     }
+                    try {
+                        Get-Event -SourceIdentifier $SourceIdentifier -ErrorAction Stop | ForEach-Object {
+                            Receive-MQTTMessage -EventObject $PSItem -queue $global:queue -config $global:config
+                            Remove-Event -EventIdentifier $PSItem.EventIdentifier
+                        }
+                    }
+                    catch {}
 
                     if (([int](Get-Date).ToString("ss") % 20 -eq 0) -and (((Get-Date) - $LastTimeTriggered.Heartbeat).TotalSeconds -gt 10)) {
                         #This happens once in 20 seconds
@@ -638,49 +677,6 @@ $functions = {
                                 Use-LanTrigger "Mode-$($message.Payload.args.Mode)"
                                 Write-Information " - Sending MQTT message '$($message.Payload.args.Mode)' to topic '$com/status/sound/mode'"
                                 Send-MQTTMessage -Session $Session -Topic "$com/status/sound/mode" -Payload $message.Payload.args.Mode | Out-Null
-                            }
-                            "IncomingMQTTMessage" {
-                                $topic = $message.Payload.args.topic
-                                $payload = $message.Payload.args.payload
-                                Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
-                                switch ($topic) {
-                                    "$com/control" {
-                                        Write-Information "- Control, calling 'Invoke-ControlMessage $payload'"
-                                        Invoke-ControlMessage $payload
-                                    }
-                                    "$com/control/sound" {
-                                        Write-Information "- Voicemeeter, queuing payload"
-                                        $q.TryAdd([PSCustomObject]@{
-                                                To      = "Voicemeeter"
-                                                From    = "MQTTClient"
-                                                Payload = $payload
-                                            })
-                                        $global:config.Voicemeeter.DataWaiting = $true
-                                    }
-                                    "$com/heartbeat" {
-                                        Write-Information "- Heartbeat"
-                                    }
-                                    "$com/meta/mainvolume" {
-                                        Write-Information "- Voicemeeter A1 volume control, queuing payload"
-                                        $q.TryAdd([PSCustomObject]@{
-                                                To      = "Voicemeeter"
-                                                From    = "MQTTClient"
-                                                Payload = @{
-                                                    command = "SetVolume"
-                                                    args    = @{
-                                                        type  = "bus"
-                                                        index = 0
-                                                        level = $payload
-                                                    }
-                                                }
-                                            })
-                                        $global:config.Voicemeeter.DataWaiting = $true
-                                    }
-                                    "$com/meta/soundmode" {
-                                        Write-Information "- Voicemeeter mode change, calling 'Set-VoicemeeterButton -call $payload -caller Receiver'"
-                                        Set-VoicemeeterButton -call $payload -caller Receiver
-                                    }
-                                }
                             }
                         }
                     }
