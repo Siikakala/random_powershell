@@ -753,24 +753,41 @@ $Config = [hashtable]::Synchronized(@{
 $Queue = [System.Collections.Concurrent.ConcurrentQueue[psobject]]::new()
 # Padding to center text into the placeholder
 $Padding = @{
-    MQTTClient     = "  " #2
-    Voicemeeter    = " " #1
-    ProcessWatcher = ""
-    Main           = "     " #5
+    MQTTClient     = @{
+        Pre  = "  " #2
+        Post = "  "
+    }
+    Voicemeeter    = @{
+        Pre  = " " #1
+        Post = "  " #2
+    }
+    ProcessWatcher = @{
+        Pre  = ""
+        Post = ""
+    }
+    Main           = @{
+        Pre  = "     " #5
+        Post = "     "
+    }
+}
+$Colors = @{
+    MQTTClient     = 92 # Bright Green
+    Voicemeeter    = 96 # Bright Cyan
+    ProcessWatcher = 93 # Bright Yellow
 }
 $TimeStamp = { (Get-Date).toString("yyyy-MM-dd HH:mm:ss") }
 $OutputTemplate = "[{0}][{1,-14}] {2}"
 #$Streams = @("Debug", "Error", "Information", "Verbose", "Warning")
 #endregion
 #region Main loop
-Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", " !! STARTING MAIN THREAD !!")
+Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", " !! STARTING MAIN THREAD !!")
 $ctrlc = $false
 while ($true) {
     #region CTRL-C reading
     if ([console]::KeyAvailable) {
         $key = [system.console]::readkey($true)
         if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C")) {
-            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Ctrl-C pressed, requesting quit")
+            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Ctrl-C pressed, requesting quit")
             $ctrlc = $true
         }
     }
@@ -778,7 +795,7 @@ while ($true) {
     #region Log rotate and lifetime checks
     # Handle log rotating (roughly) once per day
     if ((Get-Date) -gt $LatestLogRotate.AddDays(1)) {
-        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Rotating logs")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Rotating logs")
         # !! NOTE: This is blocking operation !!
         Remove-OldLogs
         $LatestLogRotate = Get-Date
@@ -787,22 +804,22 @@ while ($true) {
     # This could be more elegant but it works, so, whatever
     $TooManyStarts = $Config.keys | Where-Object { $Config.$_.Starts -gt $ThreadMaxStarts }
     if ($TooManyStarts.count -gt 0) {
-        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Thread start count limit of $ThreadMaxStarts exceeded by $($TooManyStarts.count) thread$(if($TooManyStarts -ne 1){"s"}) - Requesting quit.")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Thread start count limit of $ThreadMaxStarts exceeded by $($TooManyStarts.count) thread$(if($TooManyStarts -ne 1){"s"}) - Requesting quit.")
         $ctrlc = $true
     }
 
     if ($ctrlc) {
-        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Requesting threads to stop within 5s")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Requesting threads to stop within 5s")
         foreach ($thread in $ChildJobs.Keys) {
             $Config.$thread.Enabled = $false
         }
         Start-Sleep -Seconds 5
-        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Stopping child threads")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Stopping child threads")
         $ChildJobs.Keys | ForEach-Object {
             Write-Log ("{0,38}{1}" -f "", " - $_")
             $ChildJobs.$_.instance.Stop()
         }
-        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Receiving child job outputs for the last time")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Receiving child job outputs for the last time")
     }
     #endregion
     #region Read thread output
@@ -816,13 +833,13 @@ while ($true) {
         if ($infos) {
             $msgs = $infos -split "`n"
             foreach ($msg in $msgs) {
-                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", "$esc[96m$msg$esc[0m")
+                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread.Pre)$esc[$($Colors.$thread)m$thread$esc[0m$($Padding.$thread.Post)", "$esc[$($Colors.$thread)m$msg$esc[0m")
             }
         }
         if ($errors) {
             $msgs = $errors -split "`n"
             foreach ($msg in $msgs) {
-                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", "$esc[31mERROR: $msg$esc[0m")
+                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread.Pre)$esc[$($Colors.$thread)m$thread$esc[0m$($Padding.$thread.Post)", "$esc[31mERROR: $msg$esc[0m")
             }
         }
         try {
@@ -836,17 +853,17 @@ while ($true) {
         $nothung = $true
         if ($null -ne $Config.$thread.Heartbeat -and $Config.$thread.Heartbeat -lt (Get-Date).AddMinutes(-1)) {
             # Thanks to MQTT heartbeat, even receiver thread will update it's heartbeat often enough - or then the broker is nonfuntional
-            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Detected hung thread $thread - latest heartbeat $([System.Math]::Round(((Get-Date) - $Config.$thread.Heartbeat).TotalMinutes, 1)) minutes ago. Disposing")
+            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Detected hung thread $thread - latest heartbeat $([System.Math]::Round(((Get-Date) - $Config.$thread.Heartbeat).TotalMinutes, 1)) minutes ago. Disposing")
             $ChildJobs.$thread.instance.Dispose()
             $nothung = $false
         }
         if ($null -eq $ChildJobs.$thread.instance -or ($ChildJobs.$thread.instance.InvocationStateInfo.State.ToString() -ne "Running" -and $ctrlc -eq $false)) {
             if ($nothung -and $null -ne $ChildJobs.$thread.instance.InvocationStateInfo.State) {
-                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Cleaning up previous $thread thread")
+                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Cleaning up previous $thread thread")
                 $ChildJobs.$thread.instance.Dispose()
             }
             $Config.$thread.Starts += 1
-            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Starting $thread thread (start $($Config.$thread.Starts))")
+            Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Starting $thread thread (start $($Config.$thread.Starts))")
             $ChildJobs.$thread.instance = [powershell]::Create()
             $ChildJobs.$thread.instance.RunspacePool = $pool
             $ChildJobs.$thread.instance.AddScript($functions) | Out-Null
@@ -862,7 +879,7 @@ while ($true) {
     }
     #endregion
     if ($ctrlc) {
-        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Removing child threads and breaking main thread")
+        Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Removing child threads and breaking main thread")
         foreach ($thread in $ChildJobs.Keys) {
             $ChildJobs.$thread.instance.Dispose()
         }
@@ -873,6 +890,6 @@ while ($true) {
     # Rather tight loop for ctrl-c handling
     Start-Sleep -Milliseconds 100
 }
-Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main)MAIN", "Clean-up complete, exit.")
+Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Clean-up complete, exit.")
 #endregion
 exit 0
