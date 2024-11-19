@@ -688,7 +688,7 @@ $functions = {
                     }
                     # I'm still alive!
                     $threadconf.Heartbeat = Get-Date
-                    Start-Sleep -Milliseconds 250
+                    Start-Sleep -Milliseconds 100
                 }
             }
             catch {
