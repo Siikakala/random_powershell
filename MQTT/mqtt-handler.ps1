@@ -5,6 +5,15 @@ param(
     $ParametersFile = ".\parameters.psd1",
     [int]
     $ThreadMaxStarts = 5,
+    [pscredential]
+    $MqttCredential = $(
+        # :)))))))))))
+        $conf = Get-Content c:\mqttx\mqttx-cli-config.json -Raw | ConvertFrom-Json
+        New-Object System.Management.Automation.PSCredential($conf.pub.username, (
+                ConvertTo-SecureString $conf.pub.password -AsPlainText -Force
+            )
+        )
+    ),
     [switch]
     $Confirm
 )
@@ -16,56 +25,16 @@ if ($DebugPreference -eq "Inquire" -and -not $Confirm.IsPresent) {
     $DebugPreference = "Continue"
 }
 
-try{
+try {
     # Add M2Mqtt dependency library
     Add-Type -Path "$PSScriptRoot\M2MQTT\M2Mqtt.Net.dll" -ErrorAction Stop
 
     # Import custom formatting
     Update-FormatData -AppendPath "$PSScriptRoot\M2MQTT\PSMQTT.Format.ps1xml" -ErrorAction Stop
-}catch{
+}
+catch {
     Write-Error "Could not load MQTT client library, $($_.Exception.Message)"
     exit 1
-}
-
-class PSMQTTMessage
-{
-    [string]$Topic
-    [string]$Payload
-    [byte[]]$PayloadUTF8ByteA
-    [datetime]$Timestamp
-    [boolean]$DupFlag
-    [int]$QosLevel
-    [boolean]$Retain
-
-    PSMQTTMessage(
-        [string]$Topic,
-        [string]$Payload
-    )
-    {
-        $this.Topic = $Topic
-        $this.Payload = $Payload
-        $this.PayloadUTF8ByteA = [System.Text.Encoding]::UTF8.GetBytes($Payload)
-        $this.Timestamp = (Get-Date)
-    }
-
-    PSMQTTMessage(
-        [System.Management.Automation.PSEventArgs]$EventObject
-    )
-    {
-        $this.Topic = $EventObject.SourceEventArgs.Topic
-        $this.Payload = [System.Text.Encoding]::ASCII.GetString($EventObject.SourceEventArgs.Message)
-        $this.PayloadUTF8ByteA = $EventObject.SourceEventArgs.Message
-        $this.DupFlag = $EventObject.SourceEventArgs.DupFlag
-        $this.QosLevel = $EventObject.SourceEventArgs.QosLevel
-        $this.Retain = $EventObject.SourceEventArgs.Retain
-        $this.Timestamp = $EventObject.TimeGenerated
-    }
-
-    [string] ToString ()
-    {
-        return ($this.Topic + ';' + $this.Payload)
-    }
-
 }
 
 if ($ThreadMaxStarts -isnot [int]) {
@@ -82,6 +51,7 @@ if (-not (Test-Path $params.LogPath -PathType Container)) {
     Write-Error "Log path '$($params.LogPath)' does not exist or access is denied!"
     exit 3
 }
+$params.Add("MqttCredential", $MqttCredential)
 # Initialize log rotating - this ensures it happens when script starts.
 $LatestLogRotate = Get-Date -Date 0
 # Yeaaaah, there's other ways to detect and remove possible trailing slash but I find this most elegant. It also verifies the path second time.
@@ -146,7 +116,113 @@ $functions = {
         $params
     )
     <# HELPERS #>
+    #region MQTT functions
+    function Connect-MQTTBroker {
+        [CmdletBinding(DefaultParameterSetName = 'Anon')]
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Hostname,
+            [int]
+            $Port,
+            [Parameter(Mandatory, ParameterSetName = 'Auth')]
+            [pscredential]
+            $Credential,
+            [switch]
+            $TLS
+        )
+        # Use default ports if none are specified
+        if (-not $PSBoundParameters['Port']) {
+            if ($TLS) {
+                $Port = 1884
+            }
+            else {
+                $Port = 1883
+            }
+        }
 
+        $MqttClient = New-Object -TypeName uPLibrary.Networking.M2Mqtt.MqttClient -ArgumentList $Hostname, $Port, $TLS, $null, $null, 'None'
+
+        try {
+            switch ($PSCmdlet.ParameterSetName) {
+                'Anon' {
+                    $MqttClient.Connect([guid]::NewGuid()) | Out-Null
+                }
+                'Auth' {
+                    $MqttClient.Connect([guid]::NewGuid(), $Credential.Username, ($Credential.GetNetworkCredential().Password)) | Out-Null
+                }
+            }
+        }
+        catch {
+            Write-Information "Couldn't connect to MQTT server: $($_.Exception.Message)"
+        }
+        return $MqttClient
+    }
+
+    function Disconnect-MQTTBroker {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory)]
+            [uPLibrary.Networking.M2Mqtt.MqttClient]
+            $Session
+        )
+        $Session.Disconnect()
+    }
+
+    function Send-MQTTMessage {
+        [cmdletBinding()]
+        param(
+            [Parameter(Mandatory)]
+            [uPLibrary.Networking.M2Mqtt.MqttClient]
+            $Session,
+            [Parameter(Mandatory)]
+            [string]
+            $Topic,
+            [string]
+            $Payload
+        )
+
+        try {
+            # Publish message to MQTTBroker
+            $Session.Publish($Topic, [System.Text.Encoding]::UTF8.GetBytes($Payload)) | Out-Null
+        }
+        catch {
+            Write-Information "Couldn't send MQTT message: $($_.Exception.Message)"
+        }
+    }
+
+    function Receive-MQTTMessage {
+        param($queue,$config)
+        # This is callback handler
+        $data = @{
+            topic   = $EventObject.SourceEventArgs.Topic
+            payload = [System.Text.Encoding]::ASCII.GetString($EventObject.SourceEventArgs.Message)
+        }
+
+        $payload = $false
+        try {
+            $payload = $data.payload | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {}
+        if ($payload -eq $false) {
+            $payload = $data.payload
+        }
+        if (-not [string]::IsNullOrWhiteSpace($payload)) {
+            $queue.TryAdd([PSCustomObject]@{
+                    To      = "MQTTClient"
+                    From    = "MQTTClient"
+                    Payload = @{
+                        command = "IncomingMQTTMessage"
+                        args    = @{
+                            topic   = $data.topic
+                            payload = $payload
+                        }
+                    }
+                })
+            $config.MQTTClient.DataWaiting = $true
+        }
+    }
+    #endregion
     #region LanTrigger
     function Use-LanTrigger {
         param($which)
@@ -426,9 +502,9 @@ $functions = {
             # Handle changes - every 200ms might be bit excessive but like I care.
             $A1Level = $vmr.bus[0].gain
             if ($A1Level -ne $previousA1Level -and $A1Level -ne -60) {
-                Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing Sender"
+                Write-Information "A1 volume changed $previousA1Level dB -> $A1Level dB - informing MQTTClient"
                 $q.TryAdd([PSCustomObject]@{
-                        To      = "Sender"
+                        To      = "MQTTClient"
                         From    = "Voicemeeter"
                         Payload = @{
                             command = "ChangedVolume"
@@ -438,7 +514,7 @@ $functions = {
                             }
                         }
                     })
-                $global:config.Sender.DataWaiting = $true
+                $global:config.MQTTClient.DataWaiting = $true
                 $previousA1Level = $A1Level
             }
 
@@ -451,9 +527,9 @@ $functions = {
                 }
             }
             if ($Mode -ne $previousMode) {
-                Write-Information "Mode changed $previousMode -> $Mode - informing Sender"
+                Write-Information "Mode changed $previousMode -> $Mode - informing MQTTClient"
                 $q.TryAdd([PSCustomObject]@{
-                        To      = "Sender"
+                        To      = "MQTTClient"
                         From    = "Voicemeeter"
                         Payload = @{
                             command = "ChangedMode"
@@ -462,7 +538,7 @@ $functions = {
                             }
                         }
                     })
-                $global:config.Sender.DataWaiting = $true
+                $global:config.MQTTClient.DataWaiting = $true
                 $previousMode = $Mode
                 Write-Information "Setting MacroButtons id 0 state to False"
                 $vmr.button[0].state = $false
@@ -479,182 +555,155 @@ $functions = {
     }
     #endregion
     #region Receiver
-    function Invoke-Listener {
+    function Invoke-MQTTClient {
         $parameters = $global:params
         $com = $parameters.ComputerName
-        $q = $global:queue
         $threadconf = ($global:config).($global:thread)
-        $payload = $null
+        $q = $global:queue
         Write-Information "Connecting to MQTT - Thread enabled: $($threadconf.Enabled)"
-        C:\mqttx\mqttx.exe sub --config C:\mqttx\mqttx-cli-config.json | ForEach-Object -Process {
-            # The json object is pretty printed and pipe is consuming the data row-by-row so gather the whole message first
-            $data = $null
-            $msg += $_
-            if ($_ -match "^}$") {
-                $data = $msg | ConvertFrom-Json
-                $msg = ""
-            }
-            if (-not [string]::IsNullOrEmpty($data)) {
-                $payload = $false
-                try {
-                    $payload = $data.payload | ConvertFrom-Json -ErrorAction Stop
-                }
-                catch {}
-                if ($payload -eq $false) {
-                    $payload = $data.payload
-                }
-                if (-not [string]::IsNullOrWhiteSpace($payload)) {
-                    Write-Information "Message to topic $($data.topic):`n$(($payload | Format-List | Out-String).Trim())"
-                    switch ($data.topic) {
-                        "$com/control" {
-                            Write-Information "- Control, calling 'Invoke-ControlMessage $payload'"
-                            Invoke-ControlMessage $payload
-                        }
-                        "$com/control/sound" {
-                            Write-Information "- Voicemeeter, queuing payload"
-                            $q.TryAdd([PSCustomObject]@{
-                                    To      = "Voicemeeter"
-                                    From    = "Listener"
-                                    Payload = $payload
-                                })
-                            $global:config.Voicemeeter.DataWaiting = $true
-                        }
-                        "$com/heartbeat" {
-                            Write-Information "- Heartbeat"
-                        }
-                        "$com/meta/mainvolume" {
-                            Write-Information "- Voicemeeter A1 volume control, queuing payload"
-                            $q.TryAdd([PSCustomObject]@{
-                                    To      = "Voicemeeter"
-                                    From    = "Listener"
-                                    Payload = @{
-                                        command = "SetVolume"
-                                        args    = @{
-                                            type  = "bus"
-                                            index = 0
-                                            level = $payload
-                                        }
-                                    }
-                                })
-                            $global:config.Voicemeeter.DataWaiting = $true
-                        }
-                        "$com/meta/soundmode" {
-                            Write-Information "- Voicemeeter mode change, calling 'Set-VoicemeeterButton -call $payload -caller Receiver'"
-                            Set-VoicemeeterButton -call $payload -caller Receiver
-                        }
-                    }
-                }
-                else {
-                    Write-Information "Got unprocessable data:`n$data"
-                }
-            }
-            if (-not $threadconf.Enabled) {
-                Write-Information "Exit requested - trying to quit."
-                break
-            }
-            # I'm still alive!
-            $threadconf.Heartbeat = Get-Date
+        $LastTimeTriggered = @{
+            Heartbeat = (Get-Date).AddHours(-1)
+            A1Volume  = (Get-Date).AddHours(-1)
         }
-        Write-Information "Disconnected"
-    }
-    #endregion
-    #region Sender
-    function Invoke-Sender {
-        $parameters = $global:params
-        $com = $parameters.ComputerName
-        $q = $global:queue
-        $threadconf = ($global:config).($global:thread)
-        $conf = Get-Content c:\mqttx\mqttx-cli-config.json -Raw | ConvertFrom-Json
-        $stopwatch = [System.Diagnostics.Stopwatch]::new()
-        $previousA1Level = -60
-        Write-Information "Starting sender thread - Thread enabled: $($threadconf.Enabled)"
-        :outer while ($threadconf.Enabled) {
-            for ($i = 0; $i -lt 300; $i++) {
-                # Extremely hack-y way of doing things in intervals but whatever, I regret nothing! x)
-                # One complete while($true) loop takes 5 minutes, and these actions are taken in roughly once per second. Different actions during it takes a bit of time so using
-                # stopwatch and 1 second "offset" in milliseconds to adjust the sleep time at the end
-                $stopwatch.Restart()
-                $offset = 1000
-                $message = $null
-                if ($i % 20 -eq 0) {
-                    #This happens once in 20 seconds
-                    Write-Information "Sending heartbeat to MQTT"
-                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/heartbeat" -m (Get-Date).toString("yyyy-MM-dd HH:mm:ss") | Out-Null
+        while ($threadconf.Enabled) {
+            try {
+                $Session = Connect-MQTTBroker -Hostname $parameters.MQTTBroker -Credential $parameters.MqttCredential
+                $SourceIdentifier = [guid]::NewGuid()
+                Register-ObjectEvent -InputObject $Session -EventName MqttMsgPublishReceived -SourceIdentifier $SourceIdentifier -Action { Receive-MQTTMessage -queue $global:queue -config $global:config }
+
+                foreach ($topic in $parameters.MQTTTopics) {
+                    $Session.Subscribe($Topic, 0) | Out-Null
                 }
-                if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
-                    if ($message.To -ne "Sender") {
-                        Write-Information "Received message for another thread, pushing back to queue"
-                        $q.TryAdd($message)
-                    }
-                    else {
-                        Write-Information "Received $($message.Payload.Command) from $($message.From)"
-                        if ($q.IsEmpty) {
-                            $threadconf.DataWaiting = $false
+
+                while ($Session.IsConnected -and (Get-EventSubscriber -SourceIdentifier $SourceIdentifier)) {
+                    $message = $null
+                    if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
+                        if ($message.To -ne "MQTTClient") {
+                            Write-Information "Received message for another thread, pushing back to queue"
+                            $q.TryAdd($message)
+                        }
+                        else {
+                            Write-Information "Received $($message.Payload.Command) from $($message.From)"
+                            if ($q.IsEmpty) {
+                                $threadconf.DataWaiting = $false
+                            }
                         }
                     }
-                }
-                if ($i % 60 -eq 0) {
-                    # This happens once a minute
-                    Write-Information "Requesting current A1 level from Voicemeeter"
-                    $call = @{
-                        command = "GetVolume"
-                        args    = @{
-                            type  = "bus"
-                            index = 0
-                        }
+
+                    if (([int](Get-Date).ToString("ss") % 20 -eq 0) -and (((Get-Date) - $LastTimeTriggered.Heartbeat).TotalSeconds -gt 10)) {
+                        #This happens once in 20 seconds
+                        Write-Information "Sending heartbeat to MQTT"
+                        Send-MQTTMessage -Session $Session -Topic "$com/heartbeat" -Payload (Get-Date).toString("yyyy-MM-dd HH:mm:ss") | Out-Null
+
+                        $LastTimeTriggered.Heartbeat = Get-Date
                     }
-                    $q.TryAdd([PSCustomObject]@{
-                            To      = "Voicemeeter"
-                            From    = "Sender"
-                            Payload = $call
-                        })
-                    $global:config.Voicemeeter.DataWaiting = $true
-                }
-                if ($null -ne $message) {
-                    switch -Regex ($message.Payload.Command) {
-                        "(Changed|Return)Volume" {
-                            if ($message.Payload.args.Trigger -eq "bus0Level") {
-                                if ($message.Payload.args.Value -ne $previousA1Level) {
-                                    Write-Information "Sending MQTT message '$($message.Payload.args.Value)' to topic '$com/status/sound/A1Level'"
-                                    c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/A1Level" -m $message.Payload.args.Value | Out-Null
-                                    $previousA1Level = $message.Payload.args.Value
+
+                    if (([int](Get-Date).ToString("ss") % 60 -eq 0) -and (((Get-Date) - $LastTimeTriggered.A1Volume).TotalSeconds -gt 10)) {
+                        # This happens once a minute
+                        Write-Information "Requesting current A1 level from Voicemeeter"
+                        $call = @{
+                            command = "GetVolume"
+                            args    = @{
+                                type  = "bus"
+                                index = 0
+                            }
+                        }
+                        $q.TryAdd([PSCustomObject]@{
+                                To      = "Voicemeeter"
+                                From    = "MQTTClient"
+                                Payload = $call
+                            })
+                        $global:config.Voicemeeter.DataWaiting = $true
+
+                        $LastTimeTriggered.A1Volume = Get-Date
+                    }
+                    if ($null -ne $message) {
+                        switch -Regex ($message.Payload.Command) {
+                            "(Changed|Return)Volume" {
+                                if ($message.Payload.args.Trigger -eq "bus0Level") {
+                                    if ($message.Payload.args.Value -ne $previousA1Level) {
+                                        Write-Information "Sending MQTT message '$($message.Payload.args.Value)' to topic '$com/status/sound/A1Level'"
+                                        Send-MQTTMessage -Session $Session -Topic "$com/status/sound/A1Level" -Payload $message.Payload.args.Value | Out-Null
+                                        $previousA1Level = $message.Payload.args.Value
+                                    }
+                                    else {
+                                        Write-Information "A1 level stayed unchanged"
+                                    }
                                 }
-                                else {
-                                    Write-Information "A1 level stayed unchanged"
+                            }
+                            "(Changed|Return)Mode" {
+                                Write-Information "Sound mode changed to '$($message.Payload.args.Mode)' - Calling actions"
+                                Write-Information " - Calling 'Use-LanTrigger Mode-$($message.Payload.args.Mode)'"
+                                Use-LanTrigger "Mode-$($message.Payload.args.Mode)"
+                                Write-Information " - Sending MQTT message '$($message.Payload.args.Mode)' to topic '$com/status/sound/mode'"
+                                Send-MQTTMessage -Session $Session -Topic "$com/status/sound/mode" -Payload $message.Payload.args.Mode | Out-Null
+                            }
+                            "IncomingMQTTMessage" {
+                                $topic = $message.Payload.args.topic
+                                $payload = $message.Payload.args.payload
+                                Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
+                                switch ($topic) {
+                                    "$com/control" {
+                                        Write-Information "- Control, calling 'Invoke-ControlMessage $payload'"
+                                        Invoke-ControlMessage $payload
+                                    }
+                                    "$com/control/sound" {
+                                        Write-Information "- Voicemeeter, queuing payload"
+                                        $q.TryAdd([PSCustomObject]@{
+                                                To      = "Voicemeeter"
+                                                From    = "MQTTClient"
+                                                Payload = $payload
+                                            })
+                                        $global:config.Voicemeeter.DataWaiting = $true
+                                    }
+                                    "$com/heartbeat" {
+                                        Write-Information "- Heartbeat"
+                                    }
+                                    "$com/meta/mainvolume" {
+                                        Write-Information "- Voicemeeter A1 volume control, queuing payload"
+                                        $q.TryAdd([PSCustomObject]@{
+                                                To      = "Voicemeeter"
+                                                From    = "MQTTClient"
+                                                Payload = @{
+                                                    command = "SetVolume"
+                                                    args    = @{
+                                                        type  = "bus"
+                                                        index = 0
+                                                        level = $payload
+                                                    }
+                                                }
+                                            })
+                                        $global:config.Voicemeeter.DataWaiting = $true
+                                    }
+                                    "$com/meta/soundmode" {
+                                        Write-Information "- Voicemeeter mode change, calling 'Set-VoicemeeterButton -call $payload -caller Receiver'"
+                                        Set-VoicemeeterButton -call $payload -caller Receiver
+                                    }
                                 }
                             }
                         }
-                        "(Changed|Return)Mode" {
-                            Write-Information "Sound mode changed to '$($message.Payload.args.Mode)' - Calling actions"
-                            Write-Information " - Calling 'Use-LanTrigger Mode-$($message.Payload.args.Mode)'"
-                            Use-LanTrigger "Mode-$($message.Payload.args.Mode)"
-                            Write-Information " - Sending MQTT message '$($message.Payload.args.Mode)' to topic '$com/status/sound/mode'"
-                            c:\mqttx\mqttx.exe pub -h $conf.pub.hostname -u $conf.pub.username -P $conf.pub.password -t "$com/status/sound/mode" -m $message.Payload.args.Mode | Out-Null
-                        }
                     }
-                }
 
-                # Sleep handling
-                $stopwatch.Stop()
-                $offset -= $stopwatch.ElapsedMilliseconds
-                Write-Debug "  [$((Get-Date).toString("yyyy-MM-dd HH:mm:ss"))]   SEND: loop $i, sleeping ${offset}ms"
-                if ($offset -gt 0) {
-                    Start-Sleep -Milliseconds $offset
-                }
 
-                if (-not $threadconf.Enabled) {
-                    Write-Information "Exit requested - breaking outer look."
-                    break outer
+                    if (-not $threadconf.Enabled) {
+                        Write-Information "Exit requested - trying to quit."
+                        break
+                    }
+                    # I'm still alive!
+                    $threadconf.Heartbeat = Get-Date
+                    Start-Sleep -Milliseconds 250
                 }
-
-                # I'm still alive!
-                $threadconf.Heartbeat = Get-Date
             }
+            catch {
+                foreach ($topic in $parameters.MQTTTopics) {
+                    $Session.Unsubscribe($Topic) | Out-Null
+                }
+                Unregister-Event -SourceIdentifier $SourceIdentifier
+                Disconnect-MQTTBroker $Session
+            }
+            Write-Information "Disconnected"
         }
-        # There's tiiiiiny race condition - if the exit request has gone past the inner loop for the last time BUT main loop hasn't yet started new, you might drop out without output
-        if (-not $threadconf.Enabled) {
-            Write-Information "Exiting"
-        }
+        Write-Information "Exiting"
     }
     #endregion
     Write-Information "Starting $thread - loading parameters and invoking $($config.$thread.Function)"
@@ -663,14 +712,10 @@ $functions = {
 }
 #endregion
 #region Variable initialization
-$pool = [runspacefactory]::CreateRunspacePool(1, 4)
+$pool = [runspacefactory]::CreateRunspacePool(1, 3)
 $pool.open()
 $ChildJobs = @{
-    Sender         = @{
-        instance = $null
-        handle   = $null
-    }
-    Receiver       = @{
+    MQTTClient     = @{
         instance = $null
         handle   = $null
     }
@@ -678,25 +723,17 @@ $ChildJobs = @{
         instance = $null
         handle   = $null
     }
-    #<#
+    #
     ProcessWatcher = @{
         instance = $null
         handle   = $null
     }
-    # #>
 }
 
 $Config = [hashtable]::Synchronized(@{
-        Sender         = @{
+        MQTTClient     = @{
             Enabled     = $true
-            Function    = "Invoke-Sender"
-            DataWaiting = $false
-            Heartbeat   = $null
-            Starts      = 0
-        }
-        Receiver       = @{
-            Enabled     = $true
-            Function    = "Invoke-Listener"
+            Function    = "Invoke-MQTTClient"
             DataWaiting = $false
             Heartbeat   = $null
             Starts      = 0
@@ -719,8 +756,7 @@ $Config = [hashtable]::Synchronized(@{
 $Queue = [System.Collections.Concurrent.ConcurrentQueue[psobject]]::new()
 # Padding to center text into the placeholder
 $Padding = @{
-    Sender         = "    " #4
-    Receiver       = "   " #3
+    MQTTClient     = "  " #2
     Voicemeeter    = " " #1
     ProcessWatcher = ""
     Main           = "     " #5

@@ -4,6 +4,8 @@
     LogFilePrefix          = "mqtt-handler_"
     LogFileDateSyntax      = "yyyy-MM-dd"
     LogRetentionDays       = 14
+    MQTTBroker             = "mqtt.ojamo.fi"
+    MQTTTopics             = @("tennoji/#")
     EdgeBridgeIP           = "172.20.1.225"
     EdgeBridgePort         = "8090"
     LanTriggers            = @{
