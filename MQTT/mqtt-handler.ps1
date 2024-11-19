@@ -18,6 +18,7 @@ param(
     $Confirm
 )
 #region Init
+$esc = "$([char]0x1b)"
 [void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
 [console]::TreatControlCAsInput = $true
 if ($DebugPreference -eq "Inquire" -and -not $Confirm.IsPresent) {
@@ -813,11 +814,19 @@ while ($true) {
     $msgs = ""
     foreach ($thread in $ChildJobs.Keys) {
         $infos = $false
+        $errors = $false
         $infos = $ChildJobs.$thread.instance.Streams.Information
+        $errors = $ChildJobs.$thread.instance.Streams.Error
         if ($infos) {
             $msgs = $infos -split "`n"
             foreach ($msg in $msgs) {
-                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", $msg)
+                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", "$esc[96m$msg$esc[0m")
+            }
+        }
+        if ($errors) {
+            $msgs = $errors -split "`n"
+            foreach ($msg in $msgs) {
+                Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.$thread)$thread", "$esc[31mERROR: $msg$esc[0m")
             }
         }
         try {
