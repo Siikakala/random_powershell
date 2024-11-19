@@ -4,7 +4,7 @@ param(
     [string]
     $ParametersFile = ".\parameters.psd1",
     [int]
-    $ThreadMaxStarts = 20,
+    $ThreadMaxStarts = 5,
     [switch]
     $Confirm
 )
@@ -16,13 +16,60 @@ if ($DebugPreference -eq "Inquire" -and -not $Confirm.IsPresent) {
     $DebugPreference = "Continue"
 }
 
-if (-not (Test-Path C:\mqttx\mqttx.exe)) {
-    Write-Error "mqttx cli client not found from path C:\mqttx\mqttx.exe. Please download from https://mqttx.app/cli#download"
-    exit
+try{
+    # Add M2Mqtt dependency library
+    Add-Type -Path "$PSScriptRoot\M2MQTT\M2Mqtt.Net.dll" -ErrorAction Stop
+
+    # Import custom formatting
+    Update-FormatData -AppendPath "$PSScriptRoot\M2MQTT\PSMQTT.Format.ps1xml" -ErrorAction Stop
+}catch{
+    Write-Error "Could not load MQTT client library, $($_.Exception.Message)"
+    exit 1
+}
+
+class PSMQTTMessage
+{
+    [string]$Topic
+    [string]$Payload
+    [byte[]]$PayloadUTF8ByteA
+    [datetime]$Timestamp
+    [boolean]$DupFlag
+    [int]$QosLevel
+    [boolean]$Retain
+
+    PSMQTTMessage(
+        [string]$Topic,
+        [string]$Payload
+    )
+    {
+        $this.Topic = $Topic
+        $this.Payload = $Payload
+        $this.PayloadUTF8ByteA = [System.Text.Encoding]::UTF8.GetBytes($Payload)
+        $this.Timestamp = (Get-Date)
+    }
+
+    PSMQTTMessage(
+        [System.Management.Automation.PSEventArgs]$EventObject
+    )
+    {
+        $this.Topic = $EventObject.SourceEventArgs.Topic
+        $this.Payload = [System.Text.Encoding]::ASCII.GetString($EventObject.SourceEventArgs.Message)
+        $this.PayloadUTF8ByteA = $EventObject.SourceEventArgs.Message
+        $this.DupFlag = $EventObject.SourceEventArgs.DupFlag
+        $this.QosLevel = $EventObject.SourceEventArgs.QosLevel
+        $this.Retain = $EventObject.SourceEventArgs.Retain
+        $this.Timestamp = $EventObject.TimeGenerated
+    }
+
+    [string] ToString ()
+    {
+        return ($this.Topic + ';' + $this.Payload)
+    }
+
 }
 
 if ($ThreadMaxStarts -isnot [int]) {
-    $ThreadMaxStarts = 20
+    $ThreadMaxStarts = 10
 }
 
 $paramkeys = "LogPath", "LogFilePrefix", "LogFileDateSyntax", "LogRetentionDays", "EdgeBridgeIP", "EdgeBridgePort", "AudioButtonActions", "AudioDuckButtons", "ComputerName", "AudioDevicesHeadphones", "ProcessesWatcher", "AudioDevicesSpeakers", "LanTriggers"
