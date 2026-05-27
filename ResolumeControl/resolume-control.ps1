@@ -101,7 +101,7 @@ if ($ThreadMaxStarts -isnot [int]) {
     $ThreadMaxStarts = 10
 }
 
-$paramkeys = "LogPath", "LogFilePrefix", "LogFileDateSyntax", "LogRetentionDays", "MqttServer", "MqttUser", "MqttPassword", "ResolumeIP", "ResolumePort"
+$paramkeys = "LogPath", "LogFilePrefix", "LogFileDateSyntax", "LogRetentionDays", "MQTTBroker", "MqttUser", "MqttPassword", "ResolumeIP", "ResolumePort"
 $params = Import-PowerShellDataFile $ParametersFile
 if ($paramkeys | Where-Object { $_ -notin $params.keys }) {
     Write-Error "Parameter file doesn't have all required keys ($($paramkeys -join ", "))"
