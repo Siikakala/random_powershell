@@ -29,14 +29,15 @@ The syntax should be somewhat intuitive. There's common keys for both mqtt messa
 MQTT triggers in YAML:
     Each topic is defined as key under main key mqtt. Different values for the topic are defined as array. Each
     array entry mush contain the 3 common keys, in addition of content-key, which is plain text content of the message,
-    defining which entry of the array should be triggered.
+    defining which entry of the array should be triggered. Multiple actions can be defined with multiple entries of same
+    content-key.
 
 Schedules in YAML:
     Simple array under main key schedule. Each entry has following keys in addition to the common ones:
     * name
         Free-text key for people. Not used in processing - just as a comment for what this trigger is for
     * time
-        Timestamp recognized as Get-Date. Format is free as long as Get-Date can parse it. yyyy-MM-dd HH:mm is strongly recommended.
+        Timestamp recognized as Get-Date. Format is free as long as Get-Date can parse it. yyyy-MM-dd HH:mm:ss is strongly recommended.
 
 Internal queue message:
 [PSCustomObject]@{
@@ -286,19 +287,23 @@ $functions = {
             $topic = $data.topic
             Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
             $conf = $y.mqtt.$topic | Where-Object { $_.content -match $payload.Trim() }
-            $q.TryAdd([PSCustomObject]@{
-                    To      = "ResolumeControl"
-                    From    = "MQTTClient"
-                    Payload = @{
-                        command = "MQTT"
-                        args    = @{
-                            Action = $conf.action
-                            Layer  = $conf.layer
-                            Value  = $conf.value
-                        }
-                    }
-                })
-            $global:config.ResolumeControl.DataWaiting = $true
+            if ($null -ne $conf) {
+                foreach ($entry in $conf) {
+                    $q.TryAdd([PSCustomObject]@{
+                            To      = "ResolumeControl"
+                            From    = "MQTTClient"
+                            Payload = @{
+                                command = "MQTT"
+                                args    = @{
+                                    Action = $entry.action
+                                    Layer  = $entry.layer
+                                    Value  = $entry.value
+                                }
+                            }
+                        })
+                }
+                $global:config.ResolumeControl.DataWaiting = $true
+            }
         }
     }
     #endregion
@@ -384,6 +389,7 @@ $functions = {
                 }
                 $params = $message.payload.args
                 foreach ($command in $params) {
+                    Write-Information "$($command.Action) to layer $($command.Layer) with value $($command.Value)"
                     $OSCAction = Find-OSCAction $command.Action
                     if ($command.Value -isnot [int]) {
                         $OSCValue = switch ($command.Value) {
