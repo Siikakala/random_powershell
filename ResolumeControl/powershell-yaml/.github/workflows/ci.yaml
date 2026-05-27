@@ -1,0 +1,61 @@
+name: powershell-yaml
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  powershell_tests:
+    name: Pester tests on powershell.exe
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2019, windows-2022]
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install modules
+        shell: powershell
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Assert -ErrorAction Stop -MaximumVersion 0.9.6 -Force
+          Install-Module Pester -ErrorAction Stop -MaximumVersion 5.6.1 -Force
+      - name: Run tests
+        shell: powershell
+        run: |
+          Invoke-Pester
+
+  pwsh_tests:
+    name: Pester tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-latest, windows-2019, windows-2022]
+    
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install modules
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Assert -ErrorAction Stop -MaximumVersion 0.9.6 -Force
+          Install-Module Pester -ErrorAction Stop -MaximumVersion 5.6.1 -Force
+      - name: Run tests
+        shell: pwsh
+        run: |
+          Remove-Module Pester -ErrorAction SilentlyContinue
+          Import-Module pester -Version 5.6.1
+
+          $PSVersionTable
+
+          Invoke-Pester
