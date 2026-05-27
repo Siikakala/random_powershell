@@ -298,6 +298,7 @@ $functions = {
                         }
                     }
                 })
+            $global:config.ResolumeControl.DataWaiting = $true
         }
     }
     #endregion
@@ -351,6 +352,7 @@ $functions = {
                             }
                         }
                     })
+                $global:config.ResolumeControl.DataWaiting = $true
             }
             # I'm still alive!
             $threadconf.Heartbeat = Get-Date
@@ -412,7 +414,7 @@ $functions = {
                             "TransitionTime" {
                                 if ($command.Value -ge 0 -or $command.Value -le 10000) {
                                     # Resolume expects float between 0 and 1. Input is milliseconds
-                                    [int]::Round($command.Value / 100000) * 100
+                                    [Math]::Round($command.Value / 1000000, 4) * 100
                                 }
                                 else {
                                     Write-Information "ERR: Value $($command.Action) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
@@ -430,7 +432,7 @@ $functions = {
                             }
                         }
                     }
-                    if($command.Action -match "ClearLayer"){
+                    if ($command.Action -match "ClearLayer") {
                         $OSCValue = 1
                     }
                     Write-Information "Sending OSC message '/composition/layers/$($command.Layer)/$($OSCAction)' with value $OSCValue"
