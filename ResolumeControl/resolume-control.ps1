@@ -22,7 +22,7 @@ The syntax should be somewhat intuitive. There's common keys for both mqtt messa
     * TransitionTime
         Layer transition time in milliseconds. 0 - 10s, rounded to 100ms
 * layer
-    Defines the layer to witch the action is performed to
+    Defines the layer to which the action is performed to
 * value
     Raw value for OSC messages. Boolean-like values (on/off, true/false) are converted to integers automatically
 
@@ -283,8 +283,7 @@ $functions = {
             $payload = $data.payload
         }
         if (-not [string]::IsNullOrWhiteSpace($payload)) {
-            $topic = $data.topic#$message.Payload.args.topic
-            #$payload = $message.Payload.args.payload
+            $topic = $data.topic
             Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
             $conf = $y.mqtt.$topic | Where-Object { $_.content -match $payload.Trim() }
             $q.TryAdd([PSCustomObject]@{
@@ -338,7 +337,7 @@ $functions = {
                 }
             }
             foreach ($time in $y.schedule) {
-
+                #TODO: Implement
 
                 $q.TryAdd([PSCustomObject]@{
                         To      = "ResolumeControl"
@@ -425,7 +424,7 @@ $functions = {
                                     $command.Value
                                 }
                                 else {
-                                    Write-Information "ERR: Value $($command.Action) out of bounds! Defaulting to 0"
+                                    Write-Information "ERR: Value $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
                                     0
                                 }
                             }
@@ -572,20 +571,20 @@ $Queue = [System.Collections.Concurrent.ConcurrentQueue[psobject]]::new()
 # Padding to center text into the placeholder
 $Padding = @{
     MQTTClient       = @{
-        Pre  = "  " #2
-        Post = "  "
+        Pre  = "   " #3
+        Post = "   "
     }
     ResolumeControl  = @{
-        Pre  = " " #1
-        Post = "  " #2
+        Pre  = "" #0
+        Post = " " #1
     }
     SchedulerWatcher = @{
         Pre  = ""
         Post = ""
     }
     Main             = @{
-        Pre  = "     " #5
-        Post = "     "
+        Pre  = "      " #6
+        Post = "      "
     }
 }
 $Colors = @{
@@ -594,7 +593,7 @@ $Colors = @{
     SchedulerWatcher = 93 # Bright Yellow
 }
 $TimeStamp = { (Get-Date).toString("yyyy-MM-dd HH:mm:ss") }
-$OutputTemplate = "[{0}][{1,-14}] {2}"
+$OutputTemplate = "[{0}][{1,-16}] {2}"
 #$Streams = @("Debug", "Error", "Information", "Verbose", "Warning")
 #endregion
 #region Main loop
