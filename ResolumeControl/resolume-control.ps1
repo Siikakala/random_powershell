@@ -134,7 +134,7 @@ try {
 }
 catch {
     Write-Error "Could not load configuration YAML file, $($_.Exception.Message)"
-    exit 1
+    exit 5
 }
 #endregion
 #region Main loop only functions
@@ -446,7 +446,7 @@ $functions = {
                                         $command.Value
                                     }
                                     else {
-                                        Write-Information "ERR: Value $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
+                                        Write-Information "ERR: Value $($command.Value) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
                                         0
                                     }
                                 }
@@ -455,8 +455,8 @@ $functions = {
                         if ($command.Action -match "ClearLayer") {
                             $OSCValue = 1
                         }
-                        Write-Information "Sending OSC message '/composition/layers/$($command.Layer)/$($OSCAction)' with value $OSCValue"
-                        $OSCMessage = New-Object SharpOSC.OscMessage "/composition/layers/$($command.Layer)/$($OSCAction)", $OSCValue
+                        Write-Information "Sending OSC message '$OSCAction' with value '$OSCValue'"
+                        $OSCMessage = New-Object SharpOSC.OscMessage $OSCAction, $OSCValue
                         $OSCSender.Send($OSCMessage)
                     }
                     else{
