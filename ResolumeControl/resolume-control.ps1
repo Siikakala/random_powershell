@@ -21,8 +21,10 @@ The syntax should be somewhat intuitive. There's common keys for both mqtt messa
         Layer opacity in percents
     * TransitionTime
         Layer transition time in milliseconds. 0 - 10s, rounded to 100ms
+    * TriggerGroupColumn
+        As SelectClip but trigger whole column of defined group. Group is defined in layer field
 * layer
-    Defines the layer to which the action is performed to
+    Defines the layer or group to which the action is performed to
 * value
     Raw value for OSC messages. Boolean-like values (on/off, true/false) are converted to integers automatically
 
@@ -312,11 +314,12 @@ $functions = {
             $action
         )
         switch ($action) {
-            "SelectClip" { return "connectspecificclip" }
-            "Lock" { return "lock" }
-            "ClearLayer" { return "clear" }
-            "Opacity" { return "video/opacity" }
-            "TransitionTime" { return "transition/duration" }
+            "SelectClip" { return "/composition/layers/{0}/connectspecificclip" }
+            "Lock" { return "/composition/layers/{0}/lock" }
+            "ClearLayer" { return "/composition/layers/{0}/clear" }
+            "Opacity" { return "/composition/layers/{0}/video/opacity" }
+            "TransitionTime" { return "/composition/layers/{0}/transition/duration" }
+            "TriggerGroupColumn" { return "/composition/groups/{0}/connectspecificcolumn" }
         }
     }
 
@@ -396,61 +399,69 @@ $functions = {
                 }
                 $params = $message.payload.args
                 foreach ($command in $params) {
-                    Write-Information "$($command.Action) to layer $($command.Layer) with value $($command.Value)"
-                    $OSCAction = Find-OSCAction $command.Action
-                    if ($command.Value -isnot [int]) {
-                        $OSCValue = switch ($command.Value) {
-                            "on" { 1 }
-                            "off" { 0 }
-                            "true" { 1 }
-                            "false" { 0 }
-                            $true { 1 }
-                            $false { 0 }
-                            default {
-                                Write-Information "ERR: Value $($command.Value) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
-                                0
-                            }
-                        }
-                    }
-                    else {
-                        $OSCValue = switch ($command.Action) {
-                            "Opacity" {
-                                if ($command.Value -ge 0 -or $command.Value -le 100) {
-                                    # Resolume expects float between 0 and 1. Input is percents
-                                    $command.Value / 100
-                                }
-                                else {
-                                    Write-Information "ERR: Value $($command.Action) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
-                                    0
-                                }
-                            }
-                            "TransitionTime" {
-                                if ($command.Value -ge 0 -or $command.Value -le 10000) {
-                                    # Resolume expects float between 0 and 1. Input is milliseconds
-                                    [Math]::Round($command.Value / 1000000, 4) * 100
-                                }
-                                else {
-                                    Write-Information "ERR: Value $($command.Action) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
-                                    0
-                                }
-                            }
-                            default {
-                                if ($command.Value -in @(0, 1)) {
-                                    $command.Value
-                                }
-                                else {
-                                    Write-Information "ERR: Value $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
+                    Write-Information "$($command.Action) to layer/group $($command.Layer) with value $($command.Value)"
+                    # Bit unorthodoxic use of string formatting. As Layer/group information is inbetween the OSC message, this is easiest way
+                    # This is the only approach to abstract away the layer/group information away and make additional triggers potentially easier
+                    # TODO: Consider changing layer to target in YAML
+                    $OSCAction = (Find-OSCAction $command.Action) -f $command.layer
+                    if ($null -ne $OSCAction) {
+                        if ($command.Value -isnot [int]) {
+                            $OSCValue = switch ($command.Value) {
+                                "on" { 1 }
+                                "off" { 0 }
+                                "true" { 1 }
+                                "false" { 0 }
+                                $true { 1 }
+                                $false { 0 }
+                                default {
+                                    Write-Information "ERR: Value $($command.Value) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
                                     0
                                 }
                             }
                         }
+                        else {
+                            $OSCValue = switch ($command.Action) {
+                                "Opacity" {
+                                    if ($command.Value -ge 0 -or $command.Value -le 100) {
+                                        # Resolume expects float between 0 and 1. Input is percents
+                                        $command.Value / 100
+                                    }
+                                    else {
+                                        Write-Information "ERR: Value $($command.Action) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
+                                        0
+                                    }
+                                }
+                                "TransitionTime" {
+                                    if ($command.Value -ge 0 -or $command.Value -le 10000) {
+                                        # Resolume expects float between 0 and 1. Input is milliseconds
+                                        [Math]::Round($command.Value / 1000000, 4) * 100
+                                    }
+                                    else {
+                                        Write-Information "ERR: Value $($command.Action) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
+                                        0
+                                    }
+                                }
+                                default {
+                                    if ($command.Value -in @(0, 1)) {
+                                        $command.Value
+                                    }
+                                    else {
+                                        Write-Information "ERR: Value $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
+                                        0
+                                    }
+                                }
+                            }
+                        }
+                        if ($command.Action -match "ClearLayer") {
+                            $OSCValue = 1
+                        }
+                        Write-Information "Sending OSC message '/composition/layers/$($command.Layer)/$($OSCAction)' with value $OSCValue"
+                        $OSCMessage = New-Object SharpOSC.OscMessage "/composition/layers/$($command.Layer)/$($OSCAction)", $OSCValue
+                        $OSCSender.Send($OSCMessage)
                     }
-                    if ($command.Action -match "ClearLayer") {
-                        $OSCValue = 1
+                    else{
+                        Write-Information "ERR: Invalid OSC Action $($command.Action)"
                     }
-                    Write-Information "Sending OSC message '/composition/layers/$($command.Layer)/$($OSCAction)' with value $OSCValue"
-                    $OSCMessage = New-Object SharpOSC.OscMessage "/composition/layers/$($command.Layer)/$($OSCAction)", $OSCValue
-                    $OSCSender.Send($OSCMessage)
                 }
 
                 # I'm still alive!
