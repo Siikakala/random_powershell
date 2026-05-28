@@ -288,16 +288,16 @@ $functions = {
             Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
             $conf = $y.mqtt.$topic | Where-Object { $_.content -match $payload.Trim() }
             if ($null -ne $conf) {
-                foreach ($entry in $conf) {
+                foreach ($action in $conf) {
                     $q.TryAdd([PSCustomObject]@{
                             To      = "ResolumeControl"
                             From    = "MQTTClient"
                             Payload = @{
                                 command = "MQTT"
                                 args    = @{
-                                    Action = $entry.action
-                                    Layer  = $entry.layer
-                                    Value  = $entry.value
+                                    Action = $action.action
+                                    Layer  = $action.layer
+                                    Value  = $action.value
                                 }
                             }
                         })
@@ -343,21 +343,28 @@ $functions = {
                 }
             }
             foreach ($time in $y.schedule) {
-                #TODO: Implement
+                $ScheduleCheck = New-TimeSpan (Get-Date $time.time) (Get-Date)
+                if (($null -ne $time.triggered -and $time.triggered -ne $true) -and ($ScheduleCheck.TotalMinutes -gt 0 -and $ScheduleCheck.TotalMinutes -lt 5)) {
+                    # Scheduled time is here, hasn't been triggered yet and has past in less than 5 minutes ago - in case of script restarts or something
+                    foreach ($action in $time.actions) {
+                        $q.TryAdd([PSCustomObject]@{
+                                To      = "ResolumeControl"
+                                From    = "SchedulerWatcher"
+                                Payload = @{
+                                    command = "Schedule"
+                                    args    = @{
+                                        Action = $action.action
+                                        Layer  = $action.layer
+                                        Value  = $action.value
+                                    }
+                                }
+                            })
+                        $global:config.ResolumeControl.DataWaiting = $true
+                    }
+                    $time.Add("triggered", $true)
+                }
 
-                $q.TryAdd([PSCustomObject]@{
-                        To      = "ResolumeControl"
-                        From    = "SchedulerWatcher"
-                        Payload = @{
-                            command = "Schedule"
-                            args    = @{
-                                Action = $conf.action
-                                Layer  = $conf.layer
-                                Value  = $conf.value
-                            }
-                        }
-                    })
-                $global:config.ResolumeControl.DataWaiting = $true
+
             }
             # I'm still alive!
             $threadconf.Heartbeat = Get-Date
