@@ -1,0 +1,37 @@
+mqtt:
+  topic1:
+    - content: someword
+      action: SelectClip
+      layer: 42
+      value: 2
+    - content: someotherword
+      action: SelectClip
+      layer: 42
+      value: 3
+  topic2:
+    - content: clear
+      action: ClearLayer
+      layer: 42
+      value: 1
+schedule:
+  - name: "Event starts"
+    time: "2026-06-03 11:00"
+    actions:
+      - action: Lock
+        layer: 67
+        value: off
+      - action: SelectClip
+        layer: 67
+        value: 2
+      - action: Lock
+        layer: 67
+        value: on
+  - name: "Event stops"
+    time: "2026-06-03 21:00"
+    actions:
+      - action: Lock
+        layer: 67
+        value: false
+      - action: ClearLayer
+        layer: 67
+        value: 1
