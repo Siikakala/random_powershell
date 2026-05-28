@@ -12,11 +12,10 @@ The syntax should be somewhat intuitive. There's common keys for both mqtt messa
 * action
     Defines what should be done. Currently supported values:
     * SelectClip
-        Switches to the clip on the layer
-    * Lock
-        Locks the layer content on or off
+        Switches to the clip on the layer. Note: starts from 0, not 1
     * ClearLayer
-        Clears the current clip on the layer. Value is ignored
+        Clears the current clip on the layer. Value is ignored. Resolume seems to be bit picky about this though,
+        I advice to create blank clip and select it with SelectClip
     * Opacity
         Layer opacity in percents
     * TransitionTime
@@ -91,14 +90,14 @@ catch {
 }
 try {
     # Add SharpOSC dependency library
-    Add-Type -Path .\SharpOSC\SharpOSC.dll -ErrorAction Stop
+    Add-Type -Path "$PSScriptRoot\SharpOSC\SharpOSC.dll" -ErrorAction Stop
 }
 catch {
     Write-Error "Could not load OSC client library, $($_.Exception.Message)"
     exit 1
 }
 
-Import-Module .\powershell-yaml
+Import-Module "$PSScriptRoot\powershell-yaml"
 
 if ($ThreadMaxStarts -isnot [int]) {
     $ThreadMaxStarts = 10
@@ -115,7 +114,7 @@ if (-not (Test-Path $params.LogPath -PathType Container)) {
     exit 3
 }
 if ($null -eq $MqttCredential) {
-    New-Object System.Management.Automation.PSCredential($params.MqttUser, (
+    $MqttCredential = New-Object System.Management.Automation.PSCredential($params.MqttUser, (
             ConvertTo-SecureString $params.MqttPassword -AsPlainText -Force
         )
     )
@@ -135,6 +134,10 @@ try {
 catch {
     Write-Error "Could not load configuration YAML file, $($_.Exception.Message)"
     exit 5
+}
+if ($null -eq $yaml.mqtt -or $null -eq $yaml.schedule) {
+    Write-Error "YAML file '$YamlFile' is missing main keys mqtt or schedule, please check"
+    exit 6
 }
 #endregion
 #region Main loop only functions
@@ -189,7 +192,8 @@ $functions = {
         $thread,
         $config,
         $queue,
-        $params
+        $params,
+        $yaml
     )
     <# HELPERS #>
     #region MQTT functions
@@ -288,9 +292,9 @@ $functions = {
         if (-not [string]::IsNullOrWhiteSpace($payload)) {
             $topic = $data.topic
             Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
-            $conf = $y.mqtt.$topic | Where-Object { $_.content -match $payload.Trim() }
-            if ($null -ne $conf) {
-                foreach ($action in $conf) {
+            $actions = $y.mqtt.$topic | Where-Object { $_.content -match $payload.Trim() }
+            if ($null -ne $actions) {
+                foreach ($action in $actions) {
                     $q.TryAdd([PSCustomObject]@{
                             To      = "ResolumeControl"
                             From    = "MQTTClient"
@@ -315,7 +319,6 @@ $functions = {
         )
         switch ($action) {
             "SelectClip" { return "/composition/layers/{0}/connectspecificclip" }
-            "Lock" { return "/composition/layers/{0}/lock" }
             "ClearLayer" { return "/composition/layers/{0}/clear" }
             "Opacity" { return "/composition/layers/{0}/video/opacity" }
             "TransitionTime" { return "/composition/layers/{0}/transition/duration" }
@@ -325,16 +328,17 @@ $functions = {
 
     <# THREAD FUNCTIONS #>
     #region Schedule watcher
-    function Invoke-SchedulerWatcher {
+    function Invoke-ScheduleWatcher {
         #$parameters = $global:params
         $y = $global:yaml
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
+        Write-Information "Loaded $($y.schedule.Count) scheduled tasks"
         while ($threadconf.Enabled) {
             if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
                 # Not really used to anything yet but just to be consistent
-                if ($message.To -ne "SchedulerWatcher") {
+                if ($message.To -ne "ScheduleWatcher") {
                     Write-Information "Received message for another thread, pushing back to queue"
                     $q.TryAdd($message)
                 }
@@ -347,12 +351,13 @@ $functions = {
             }
             foreach ($time in $y.schedule) {
                 $ScheduleCheck = New-TimeSpan (Get-Date $time.time) (Get-Date)
-                if (($null -ne $time.triggered -and $time.triggered -ne $true) -and ($ScheduleCheck.TotalMinutes -gt 0 -and $ScheduleCheck.TotalMinutes -lt 5)) {
+                if (($null -eq $time.triggered -or $time.triggered -ne $true) -and ($ScheduleCheck.TotalMinutes -gt 0 -and $ScheduleCheck.TotalMinutes -lt 5)) {
                     # Scheduled time is here, hasn't been triggered yet and has past in less than 5 minutes ago - in case of script restarts or something
+                    Write-Information "Triggering schedule '$($time.name)'"
                     foreach ($action in $time.actions) {
                         $q.TryAdd([PSCustomObject]@{
                                 To      = "ResolumeControl"
-                                From    = "SchedulerWatcher"
+                                From    = "ScheduleWatcher"
                                 Payload = @{
                                     command = "Schedule"
                                     args    = @{
@@ -371,7 +376,7 @@ $functions = {
             }
             # I'm still alive!
             $threadconf.Heartbeat = Get-Date
-            Start-Sleep -Milliseconds 250
+            Start-Sleep -Seconds 1
         }
         if (-not $threadconf.Enabled) {
             Write-Information "Exit requested - quiting."
@@ -384,6 +389,7 @@ $functions = {
         $q = $global:queue
         $threadconf = ($global:config).($global:thread)
         $message = $null
+        Write-Information "Initializing OSC Sender"
         $OSCSender = New-Object SharpOSC.UDPSender $parameters.ResolumeIP, $parameters.ResolumePort
         while ($threadconf.Enabled) {
             if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
@@ -407,15 +413,18 @@ $functions = {
                     if ($null -ne $OSCAction) {
                         if ($command.Value -isnot [int]) {
                             $OSCValue = switch ($command.Value) {
-                                "on" { 1 }
-                                "off" { 0 }
-                                "true" { 1 }
-                                "false" { 0 }
-                                $true { 1 }
-                                $false { 0 }
+                                "on" { 1.0; break }
+                                "off" { 0.0; break }
+                                "true" { 1; break }
+                                "false" { 0; break }
+                                "null" { $null; break }
+                                $true { 1; break }
+                                $false { 0; break }
+                                $null { $null; break }
                                 default {
                                     Write-Information "ERR: Value $($command.Value) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
                                     0
+                                    break
                                 }
                             }
                         }
@@ -442,152 +451,153 @@ $functions = {
                                     }
                                 }
                                 default {
-                                    if ($command.Value -in @(0, 1)) {
-                                        $command.Value
-                                    }
-                                    else {
-                                        Write-Information "ERR: Value $($command.Value) of $($command.Action) out of bounds! Source $($message.payload.Command). Defaulting to 0"
-                                        0
-                                    }
+                                    $command.Value
                                 }
                             }
                         }
                         if ($command.Action -match "ClearLayer") {
-                            $OSCValue = 1
+                            $OSCValue = $null
                         }
-                        Write-Information "Sending OSC message '$OSCAction' with value '$OSCValue'"
-                        $OSCMessage = New-Object SharpOSC.OscMessage $OSCAction, $OSCValue
-                        $OSCSender.Send($OSCMessage)
+                        if ($null -eq $OSCValue) {
+                            Write-Information "Sending OSC message '$OSCAction'"
+                            $OSCMessage = New-Object SharpOSC.OscMessage $OSCAction
+                            $OSCSender.Send($OSCMessage)
+                        }
+                        else {
+                            Write-Information "Sending OSC message '$OSCAction' with value '$OSCValue'"
+                            $OSCMessage = New-Object SharpOSC.OscMessage $OSCAction, $OSCValue
+                            $OSCSender.Send($OSCMessage)
+                        }
                     }
-                    else{
+                    else {
                         Write-Information "ERR: Invalid OSC Action $($command.Action)"
                     }
                 }
-
-                # I'm still alive!
-                $threadconf.Heartbeat = Get-Date
-                Start-Sleep -Milliseconds 200
             }
+
+            # I'm still alive!
+            $threadconf.Heartbeat = Get-Date
+            Start-Sleep -Milliseconds 500
             if (-not $threadconf.Enabled) {
                 Write-Information "Exit requested."
             }
         }
-        #endregion
-        #region Receiver
-        function Invoke-MQTTClient {
-            $parameters = $global:params
-            $y = $global:yaml
-            $threadconf = ($global:config).($global:thread)
-            $q = $global:queue
-            Write-Information "Connecting to MQTT - Thread enabled: $($threadconf.Enabled)"
-            while ($threadconf.Enabled) {
-                try {
-                    $Session = Connect-MQTTBroker -Hostname $parameters.MQTTBroker -Credential $parameters.MqttCredential
-                    $SourceIdentifier = [guid]::NewGuid()
-                    Register-ObjectEvent -InputObject $Session -EventName MqttMsgPublishReceived -SourceIdentifier $SourceIdentifier
-
-                    foreach ($Topic in $y.mqtt.Keys) {
-                        $Session.Subscribe($Topic, 0) | Out-Null
-                    }
-
-                    while ($Session.IsConnected -and (Get-EventSubscriber -SourceIdentifier $SourceIdentifier)) {
-                        $message = $null
-                        if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
-                            if ($message.To -ne "MQTTClient") {
-                                Write-Information "Received message for another thread, pushing back to queue"
-                                $q.TryAdd($message)
-                            }
-                            else {
-                                Write-Information "Received $($message.Payload.Command) from $($message.From)"
-                                if ($q.IsEmpty) {
-                                    $threadconf.DataWaiting = $false
-                                }
-                            }
-                        }
-                        try {
-                            # Receive and process MQTT messages - offloaded to the Receive-MQTTMessage function
-                            Get-Event -SourceIdentifier $SourceIdentifier -ErrorAction Stop | ForEach-Object {
-                                Receive-MQTTMessage -EventObject $PSItem -queue $global:queue -config $global:config
-                                Remove-Event -EventIdentifier $PSItem.EventIdentifier
-                            }
-                        }
-                        catch {}
-
-                        if ($null -ne $message) {
-                            # Process any messages from queue which needs to be sent to MQTT
-                            # !! There's no use for this currently, leaving as an example !!
-                            switch -Regex ($message.Payload.Command) {
-                                "NotImplemented" {
-                                    #Send-MQTTMessage -Session $Session -Topic "undefined" -Payload $message.Payload.args | Out-Null
-                                }
-                            }
-                        }
-
-
-                        if (-not $threadconf.Enabled) {
-                            Write-Information "Exit requested - trying to quit."
-                            break
-                        }
-                        # I'm still alive!
-                        $threadconf.Heartbeat = Get-Date
-                        Start-Sleep -Milliseconds 100
-                    }
-                }
-                catch {
-                    foreach ($topic in $y.mqtt.Keys) {
-                        $Session.Unsubscribe($Topic) | Out-Null
-                    }
-                    Unregister-Event -SourceIdentifier $SourceIdentifier
-                    Disconnect-MQTTBroker $Session
-                }
-                Write-Information "Disconnected"
-            }
-            Write-Information "Exiting"
-        }
-        #endregion
-        Write-Information "Starting $thread - loading parameters and invoking $($config.$thread.Function)"
-        $config.$thread.Heartbeat = Get-Date
-        Invoke-Expression $config.$thread.Function
     }
+    #endregion
+    #region Receiver
+    function Invoke-MQTTClient {
+        $parameters = $global:params
+        $y = $global:yaml
+        $threadconf = ($global:config).($global:thread)
+        $q = $global:queue
+        Write-Information "Connecting to MQTT - Thread enabled: $($threadconf.Enabled)"
+        while ($threadconf.Enabled) {
+            try {
+                $Session = Connect-MQTTBroker -Hostname $parameters.MQTTBroker -Credential $parameters.MqttCredential
+                $SourceIdentifier = [guid]::NewGuid()
+                Register-ObjectEvent -InputObject $Session -EventName MqttMsgPublishReceived -SourceIdentifier $SourceIdentifier
+
+                foreach ($Topic in $y.mqtt.Keys) {
+                    $Session.Subscribe($Topic, 0) | Out-Null
+                }
+
+                while ($Session.IsConnected -and (Get-EventSubscriber -SourceIdentifier $SourceIdentifier)) {
+                    $message = $null
+                    if ($threadconf.DataWaiting -and $q.TryDequeue([ref]$message)) {
+                        if ($message.To -ne "MQTTClient") {
+                            Write-Information "Received message for another thread, pushing back to queue"
+                            $q.TryAdd($message)
+                        }
+                        else {
+                            Write-Information "Received $($message.Payload.Command) from $($message.From)"
+                            if ($q.IsEmpty) {
+                                $threadconf.DataWaiting = $false
+                            }
+                        }
+                    }
+                    try {
+                        # Receive and process MQTT messages - offloaded to the Receive-MQTTMessage function
+                        Get-Event -SourceIdentifier $SourceIdentifier -ErrorAction Stop | ForEach-Object {
+                            Receive-MQTTMessage -EventObject $PSItem -queue $global:queue -config $global:config
+                            Remove-Event -EventIdentifier $PSItem.EventIdentifier
+                        }
+                    }
+                    catch {}
+
+                    if ($null -ne $message) {
+                        # Process any messages from queue which needs to be sent to MQTT
+                        # !! There's no use for this currently, leaving as an example !!
+                        switch -Regex ($message.Payload.Command) {
+                            "NotImplemented" {
+                                #Send-MQTTMessage -Session $Session -Topic "undefined" -Payload $message.Payload.args | Out-Null
+                            }
+                        }
+                    }
+
+
+                    if (-not $threadconf.Enabled) {
+                        Write-Information "Exit requested - trying to quit."
+                        break
+                    }
+                    # I'm still alive!
+                    $threadconf.Heartbeat = Get-Date
+                    Start-Sleep -Milliseconds 100
+                }
+            }
+            catch {
+                foreach ($topic in $y.mqtt.Keys) {
+                    $Session.Unsubscribe($Topic) | Out-Null
+                }
+                Unregister-Event -SourceIdentifier $SourceIdentifier
+                Disconnect-MQTTBroker $Session
+            }
+            Write-Information "Disconnected"
+        }
+        Write-Information "Exiting"
+    }
+    #endregion
+    Write-Information "Starting $thread - loading parameters and invoking $($config.$thread.Function)"
+    $config.$thread.Heartbeat = Get-Date
+    Invoke-Expression $config.$thread.Function
 }
 #endregion
 #region Variable initialization
 $pool = [runspacefactory]::CreateRunspacePool(1, 3)
 $pool.open()
 $ChildJobs = @{
-    MQTTClient       = @{
+    MQTTClient      = @{
         instance = $null
         handle   = $null
     }
-    ResolumeControl  = @{
+    ResolumeControl = @{
         instance = $null
         handle   = $null
     }
     #
-    SchedulerWatcher = @{
+    ScheduleWatcher = @{
         instance = $null
         handle   = $null
     }
 }
 
 $Config = [hashtable]::Synchronized(@{
-        MQTTClient       = @{
+        MQTTClient      = @{
             Enabled     = $true
             Function    = "Invoke-MQTTClient"
             DataWaiting = $false
             Heartbeat   = $null
             Starts      = 0
         }
-        ResolumeControl  = @{
+        ResolumeControl = @{
             Enabled     = $true
             Function    = "Invoke-ResolumeControl"
             DataWaiting = $false
             Heartbeat   = $null
             Starts      = 0
         }
-        SchedulerWatcher = @{
+        ScheduleWatcher = @{
             Enabled     = $true
-            Function    = "Invoke-SchedulerWatcher"
+            Function    = "Invoke-ScheduleWatcher"
             DataWaiting = $false
             Heartbeat   = $null
             Starts      = 0
@@ -596,30 +606,30 @@ $Config = [hashtable]::Synchronized(@{
 $Queue = [System.Collections.Concurrent.ConcurrentQueue[psobject]]::new()
 # Padding to center text into the placeholder
 $Padding = @{
-    MQTTClient       = @{
+    MQTTClient      = @{
         Pre  = "   " #3
-        Post = "   "
+        Post = "  "
     }
-    ResolumeControl  = @{
+    ResolumeControl = @{
         Pre  = "" #0
-        Post = " " #1
+        Post = "" #1
     }
-    SchedulerWatcher = @{
+    ScheduleWatcher = @{
         Pre  = ""
         Post = ""
     }
-    Main             = @{
+    Main            = @{
         Pre  = "      " #6
-        Post = "      "
+        Post = "     "
     }
 }
 $Colors = @{
-    MQTTClient       = 92 # Bright Green
-    ResolumeControl  = 96 # Bright Cyan
-    SchedulerWatcher = 93 # Bright Yellow
+    MQTTClient      = 92 # Bright Green
+    ResolumeControl = 96 # Bright Cyan
+    ScheduleWatcher = 93 # Bright Yellow
 }
 $TimeStamp = { (Get-Date).toString("yyyy-MM-dd HH:mm:ss") }
-$OutputTemplate = "[{0}][{1,-16}] {2}"
+$OutputTemplate = "[{0}][{1,-15}] {2}"
 #$Streams = @("Debug", "Error", "Information", "Verbose", "Warning")
 #endregion
 #region Main loop
@@ -715,6 +725,7 @@ while ($true) {
                 queue  = $queue
                 config = $Config
                 params = $params
+                yaml   = $yaml
             }
             $ChildJobs.$thread.instance.AddParameters($argslist) | Out-Null
             $ChildJobs.$thread.handle = $ChildJobs.$thread.instance.BeginInvoke()
