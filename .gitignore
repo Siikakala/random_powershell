@@ -1,4 +1,5 @@
 **.ans
-ResolumeControl/config.yaml
-ResolumeControl/parameters.psd1
+ResolumeControl/*.yaml
+ResolumeControl/*.psd1
+!ResolumeControl/*example*
 !Vectorama/*artfile.ans
