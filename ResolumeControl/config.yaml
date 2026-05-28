@@ -35,6 +35,3 @@ schedule:
       - action: ClearLayer
         layer: 67
         value: 1
-      - action: Lock
-        layer: 67
-        value: on
