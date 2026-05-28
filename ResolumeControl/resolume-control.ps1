@@ -490,7 +490,7 @@ $functions = {
         $y = $global:yaml
         $threadconf = ($global:config).($global:thread)
         $q = $global:queue
-        Write-Information "Connecting to MQTT - Thread enabled: $($threadconf.Enabled)"
+        Write-Information "Connecting to MQTT"
         while ($threadconf.Enabled) {
             try {
                 $Session = Connect-MQTTBroker -Hostname $parameters.MQTTBroker -Credential $parameters.MqttCredential
