@@ -17,21 +17,18 @@ schedule:
   - name: "Event starts"
     time: "2026-06-03 11:00"
     actions:
-      - action: Lock
+      - action: ClearLayer
         layer: 67
         value: off
       - action: SelectClip
         layer: 67
         value: 2
-      - action: Lock
+      - action: Opacity
         layer: 67
-        value: on
+        value: 0.8
   - name: "Event stops"
     time: "2026-06-03 21:00"
     actions:
-      - action: Lock
-        layer: 67
-        value: false
       - action: ClearLayer
         layer: 67
         value: 1
