@@ -101,23 +101,23 @@ whatever the actual payload of the MQTT message has. Script is assuming plain te
 which means you can also use regex here, defined in key `content`. This enables parsing JSON if you are masochist.
 
 The keys `action`, `layer`, and `value` are common with the schedule section. These dictate what should happen in Resolume.
-* action
-    Defines what should be done. Currently supported values:
-    * SelectClip
-        Switches to the clip on the layer. Note: starts from 0, not 1
-    * ClearLayer
-        Clears the current clip on the layer. Value is ignored. Resolume seems to be bit picky about this though,
+* `action`
+  * Defines what should be done. Currently supported values:
+    * `SelectClip`
+      * Switches to the clip on the layer. Note: starts from 0, not 1
+    * `ClearLayer`
+      * Clears the current clip on the layer. Value is ignored. Resolume seems to be bit picky about this though,
         I advice to create blank clip and select it with SelectClip
-    * Opacity
-        Layer opacity in percents
-    * TransitionTime
-        Layer transition time in milliseconds. 0 - 10s, rounded to 100ms
-    * TriggerGroupColumn
-        As SelectClip but trigger whole column of defined group. Group is defined in layer field
-* layer
-    Defines the layer or group to which the action is performed to
-* value
-    Raw value for OSC messages. Boolean-like values (on/off, true/false) are converted to integers automatically. For actions
+    * `Opacity`
+      * Layer opacity in percents
+    * `TransitionTime`
+      * Layer transition time in milliseconds. 0 - 10s, rounded to 100ms
+    * `TriggerGroupColumn`
+      * As SelectClip but trigger whole column of defined group. Group is defined in layer field
+* `layer`
+  * Defines the layer or group to which the action is performed to
+* `value`
+  * Raw value for OSC messages. Boolean-like values (on/off, true/false) are converted to integers automatically. For actions
     not requiring value, like ClearLayer, you can use `null`.
 
 The `schedule` key is very similar to MQTT. Biggest difference is that instead of content, you define `time` in format `Get-Date`
