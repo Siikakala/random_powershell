@@ -2,4 +2,7 @@
 ResolumeControl/*.yaml
 ResolumeControl/*.psd1
 !ResolumeControl/*example*
+StreamerInfo/*.yaml
+StreamerInfo/*.psd1
+!StreamerInfo/*example*
 !Vectorama/*artfile.ans
