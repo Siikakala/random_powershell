@@ -51,7 +51,7 @@ change the ResolumeIP property, `127.0.0.1` in the example, to the IP of the Res
 the OSC configuration page.
 
 Other mandatory thing is the MQTT configuration. Please set MQTT server, username and password in plain text inside the
-quotes. If username or password contains quotes, it needs to be escaped with backtick, like this: ``"`
+quotes. If username or password contains quotes, it needs to be escaped with backtick, like this: \`"
 
 ### Config.yaml
 I have tried to make the YAML configuration as intuitive as possible - if you have configured any YAML files, you should
