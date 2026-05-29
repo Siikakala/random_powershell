@@ -552,10 +552,10 @@ $functions = {
             }
 
             $Mode = switch ($vmr.bus[0].device.name) {
-                    ($parameters.AudioDevicesSpeakers) {
+                ($parameters.AudioDevicesSpeakers) {
                     "Speakers"
                 }
-                    ($parameters.AudioDevicesHeadphones) {
+                ($parameters.AudioDevicesHeadphones) {
                     "Headphones"
                 }
             }
@@ -691,13 +691,12 @@ $functions = {
                     Start-Sleep -Milliseconds 100
                 }
             }
-            catch {
-                foreach ($topic in $parameters.MQTTTopics) {
-                    $Session.Unsubscribe($Topic) | Out-Null
-                }
-                Unregister-Event -SourceIdentifier $SourceIdentifier
-                Disconnect-MQTTBroker $Session
+            catch {}
+            foreach ($topic in $parameters.MQTTTopics) {
+                $Session.Unsubscribe($Topic) | Out-Null
             }
+            Unregister-Event -SourceIdentifier $SourceIdentifier
+            Disconnect-MQTTBroker $Session
             Write-Information "Disconnected"
         }
         Write-Information "Exiting"
