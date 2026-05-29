@@ -292,7 +292,7 @@ $functions = {
         if (-not [string]::IsNullOrWhiteSpace($payload)) {
             $topic = $data.topic
             Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
-            $actions = $y.mqtt.$topic | Where-Object { $_.content -match $payload.Trim() }
+            $actions = $y.mqtt.$topic | Where-Object { $payload.Trim() -match $_.content }
             if ($null -ne $actions) {
                 foreach ($action in $actions) {
                     $q.TryAdd([PSCustomObject]@{
