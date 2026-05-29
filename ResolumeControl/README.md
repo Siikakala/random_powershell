@@ -129,6 +129,6 @@ schedule was triggered when time triggers. Schedules can have multiple actions, 
 This is modified version of my `mqtt-handler.ps1` found from MQTT folder in this repo. By default the script doesn't
 produce any output to prompt you are running it from. You can follow the logs by copying log-reader script
 `mqtt-handler-log-reader.ps1` from the `MQTT` folder of this repo into same folder as `resolume-control.ps1` and running it.
-It discovers log files from parameters file automatically.
+It discovers log files location from parameters file automatically.
 
 The script is multithreaded so logging might miss or skip lines occasionally.
