@@ -39,6 +39,7 @@ hashtable and should looks something like this:
     LogFilePrefix     = "resolume-control_"
     LogFileDateSyntax = "yyyy-MM-dd"
     LogRetentionDays  = 14
+    MQTTEnabled       = $true
     MQTTBroker        = "mqtt.example.com"
     MqttUser          = ""
     MqttPassword      = ""
@@ -50,8 +51,9 @@ The example assumes you run the script on the same machine as Resolume. If you w
 change the ResolumeIP property, `127.0.0.1` in the example, to the IP of the Resolume machine. You can see the IP in
 the OSC configuration page.
 
-Other mandatory thing is the MQTT configuration. Please set MQTT server, username and password in plain text inside the
-quotes. If username or password contains quotes, it needs to be escaped with backtick, like this: \`"
+If you want to use MQTT triggers, note the MQTT configuration. If you don't plan to use MQTT triggers, set the `MQTTEnabled`
+to `$false` Please set MQTT server, username and password in plain text inside the quotes. If username or password contains
+quotes, it needs to be escaped with backtick, like this: \`"
 
 ### Config.yaml
 I have tried to make the YAML configuration as intuitive as possible - if you have configured any YAML files, you should

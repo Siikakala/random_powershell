@@ -5,7 +5,7 @@ Remote control Resolume Arena with OSC messages
 .DESCRIPTION
 Multifaceted and multithreaded script which can control Resolume Arena
 with OSC messages. Receives commands via MQTT and YAML. MQTT delivers
-just triggers, which are defined in YAML.
+just triggers, which are defined in YAML. MQTT can be disabled in configuration
 
 YAML Syntax:
 The syntax should be somewhat intuitive. There's common keys for both mqtt messages and schedules:
@@ -103,7 +103,7 @@ if ($ThreadMaxStarts -isnot [int]) {
     $ThreadMaxStarts = 10
 }
 
-$paramkeys = "LogPath", "LogFilePrefix", "LogFileDateSyntax", "LogRetentionDays", "MQTTBroker", "MqttUser", "MqttPassword", "ResolumeIP", "ResolumePort"
+$paramkeys = "LogPath", "LogFilePrefix", "LogFileDateSyntax", "LogRetentionDays", "MQTTEnabled", "MQTTBroker", "MqttUser", "MqttPassword", "ResolumeIP", "ResolumePort"
 $params = Import-PowerShellDataFile $ParametersFile
 if ($paramkeys | Where-Object { $_ -notin $params.keys }) {
     Write-Error "Parameter file doesn't have all required keys ($($paramkeys -join ", "))"
@@ -581,7 +581,7 @@ $ChildJobs = @{
 
 $Config = [hashtable]::Synchronized(@{
         MQTTClient      = @{
-            Enabled     = $true
+            Enabled     = $params.MQTTEnabled
             Function    = "Invoke-MQTTClient"
             DataWaiting = $false
             Heartbeat   = $null
@@ -668,8 +668,10 @@ while ($true) {
         Start-Sleep -Seconds 5
         Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Stopping child threads")
         $ChildJobs.Keys | ForEach-Object {
-            Write-Log ("{0,38}{1}" -f "", " - $_")
-            $ChildJobs.$_.instance.Stop()
+            if ($null -ne $ChildJobs.$_.instance) {
+                Write-Log ("{0,38}{1}" -f "", " - $_")
+                $ChildJobs.$_.instance.Stop()
+            }
         }
         Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Receiving child job outputs for the last time")
     }
@@ -703,13 +705,13 @@ while ($true) {
     #region Thread starter
     foreach ($thread in $ChildJobs.Keys) {
         $nothung = $true
-        if ($null -ne $Config.$thread.Heartbeat -and $Config.$thread.Heartbeat -lt (Get-Date).AddMinutes(-1)) {
+        if ($Config.$thread.Enabled -eq $true -and $null -ne $Config.$thread.Heartbeat -and $Config.$thread.Heartbeat -lt (Get-Date).AddMinutes(-1)) {
             # Thanks to MQTT heartbeat, even receiver thread will update it's heartbeat often enough - or then the broker is nonfuntional
             Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Detected hung thread $thread - latest heartbeat $([System.Math]::Round(((Get-Date) - $Config.$thread.Heartbeat).TotalMinutes, 1)) minutes ago. Disposing")
             $ChildJobs.$thread.instance.Dispose()
             $nothung = $false
         }
-        if ($null -eq $ChildJobs.$thread.instance -or ($ChildJobs.$thread.instance.InvocationStateInfo.State.ToString() -ne "Running" -and $ctrlc -eq $false)) {
+        if ($Config.$thread.Enabled -eq $true -and ($null -eq $ChildJobs.$thread.instance -or ($ChildJobs.$thread.instance.InvocationStateInfo.State.ToString() -ne "Running" -and $ctrlc -eq $false))) {
             if ($nothung -and $null -ne $ChildJobs.$thread.instance.InvocationStateInfo.State) {
                 Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Cleaning up previous $thread thread")
                 $ChildJobs.$thread.instance.Dispose()
@@ -734,7 +736,9 @@ while ($true) {
     if ($ctrlc) {
         Write-Log ($OutputTemplate -f (&$TimeStamp), "$($Padding.Main.Pre)MAIN", "Removing child threads and breaking main thread")
         foreach ($thread in $ChildJobs.Keys) {
-            $ChildJobs.$thread.instance.Dispose()
+            if ($null -ne $ChildJobs.$thread.instance) {
+                $ChildJobs.$thread.instance.Dispose()
+            }
         }
         $pool.close()
         $pool.Dispose()

@@ -3,6 +3,7 @@
     LogFilePrefix     = "resolume-control_"
     LogFileDateSyntax = "yyyy-MM-dd"
     LogRetentionDays  = 14
+    MQTTEnabled       = $true
     MQTTBroker        = "mqtt.example.com"
     MqttUser          = ""
     MqttPassword      = ""
