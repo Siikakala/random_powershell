@@ -840,7 +840,7 @@ Function Invoke-ApiQuery {
     }
     catch {
         if ($null -ne $_.Exception.Response) {
-            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            $reader = New-Object System.IO.StreamReader($_.Exception.Response.Content.ReadAsStream())
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
             $response = $reader.ReadToEnd()
@@ -869,7 +869,8 @@ Function New-HttpQueryUri {
     $UriBuilder = [System.UriBuilder]::new($Uri)
     $nvCollection = [System.Web.HttpUtility]::ParseQueryString([String]::Empty)
     foreach ($key in $QueryParameters.Keys) {
-        $nvCollection.Add($key, $QueryParameters.$key) | Out-Null
+        $EncodedParam = [System.Uri]::EscapeDataString($QueryParameters.$key)
+        $nvCollection.Add($key, $EncodedParam) | Out-Null
     }
     # nvCollection is internally HttpValueCollection, which has override for .ToString()
     # That uses class [System.Web.HttpUtility]::UrlEncodeUnicode to encode the uri
