@@ -84,7 +84,7 @@ schedule:
     actions:
       - action: ClearTarget
         target: 67
-        value: off
+        value: null
       - action: TriggerClip
         target: 67
         value: 2
@@ -95,8 +95,8 @@ schedule:
     time: "2026-06-03 21:00"
     actions:
       - action: ClearTarget
-        layer: 67
-        value: 1
+        target: 67
+        value: null
 ```
 First, the `mqtt`  key. The keys under it are topics you want to subscribe to. These in example are top-level topics so you can also use something like `resolume/control` or similar. The topic key has different values as array. So, whatever the actual payload of the MQTT message has. Script is tries to parse JSON from MQTT message payload and uses PowerShell -match internally, which means you can also use regex here, defined in key `content`. When the payload is JSON, you can define the key of the wanted payload with key `key`. It is optional and the lack of it causes script to default to plain text content.
 
@@ -114,11 +114,11 @@ The keys `action`, `target`, and `value` are common with the schedule section. T
       * Layer transition time in milliseconds. 0 - 10s, rounded to 100ms
     * `TriggerGroupColumn`
       * As TriggerClip but trigger whole column of defined group. Group is defined in layer field
-* `layer`
+* `target`
   * Defines the layer or group to which the action is performed to
 * `value`
   * Raw value for OSC messages. Boolean-like values (on/off, true/false) are converted to integers automatically. For actions
-    not requiring value, like ClearLayer, you can use `null`.
+    not requiring value, like ClearTarget, you can use `null`.
 
 The `schedule` key is very similar to MQTT. Biggest difference is that instead of content, you define `time` in format `Get-Date`
 can parse. I strongly recommend format `yyyy-MM-dd HH:mm:ss` like in the example (though seconds are omited). Schedules have
