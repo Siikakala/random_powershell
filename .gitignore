@@ -1,4 +1,5 @@
 **.ans
+**cached_data**
 ResolumeControl/*.yaml
 ResolumeControl/*.psd1
 !ResolumeControl/*example*

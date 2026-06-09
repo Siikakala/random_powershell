@@ -11,7 +11,7 @@ YAML Syntax:
 The syntax should be somewhat intuitive. There's common keys for both mqtt messages and schedules:
 * action
     Defines what should be done. Currently supported values:
-    * SelectClip
+    * TriggerClip
         Switches to the clip on the layer. Note: starts from 0, not 1
     * ClearLayer
         Clears the current clip on the layer. Value is ignored. Resolume seems to be bit picky about this though,
@@ -22,16 +22,20 @@ The syntax should be somewhat intuitive. There's common keys for both mqtt messa
         Layer transition time in milliseconds. 0 - 10s, rounded to 100ms
     * TriggerGroupColumn
         As SelectClip but trigger whole column of defined group. Group is defined in layer field
-* layer
+* target
     Defines the layer or group to which the action is performed to
 * value
     Raw value for OSC messages. Boolean-like values (on/off, true/false) are converted to integers automatically
 
 MQTT triggers in YAML:
-    Each topic is defined as key under main key mqtt. Different values for the topic are defined as array. Each
-    array entry mush contain the 3 common keys, in addition of content-key, which is plain text content of the message,
-    defining which entry of the array should be triggered. Multiple actions can be defined with multiple entries of same
-    content-key.
+    Each topic is defined as key under main key mqtt. Different values for the topic are defined as array.
+    JSON in MQTT payloads are parsed automatically. Each array entry in YAML must contain the 3 common keys,
+    in addition of:
+    * key
+        OPTIONAL - defines JSON key in which the content is parsed from.
+    * content
+        Actual content of the message, defining which entry of the array should be triggered.
+        If key is not defined, assumes plain text.
 
 Schedules in YAML:
     Simple array under main key schedule. Each entry has following keys in addition to the common ones:
@@ -292,17 +296,23 @@ $functions = {
         if (-not [string]::IsNullOrWhiteSpace($payload)) {
             $topic = $data.topic
             Write-Information "Message to topic $($topic):`n$(($payload | Format-List | Out-String).Trim())"
-            $actions = $y.mqtt.$topic | Where-Object { $payload.Trim() -match $_.content }
+            if ($null -ne $y.mqtt.$topic.key) {
+                # I seriously don't like this approach but couln't think any other option either
+                $actions = $y.mqtt.$topic | Where-Object { $payload.($_.key) -match $_.content }
+            }
+            else {
+                $actions = $y.mqtt.$topic | Where-Object { $payload -match $_.content }
+            }
             if ($null -ne $actions) {
                 foreach ($action in $actions) {
                     $q.TryAdd([PSCustomObject]@{
                             To      = "ResolumeControl"
                             From    = "MQTTClient"
                             Payload = @{
-                                command = "MQTT"
+                                command = "MQTTAction"
                                 args    = @{
                                     Action = $action.action
-                                    Layer  = $action.layer
+                                    Target = $action.target
                                     Value  = $action.value
                                 }
                             }
@@ -318,8 +328,8 @@ $functions = {
             $action
         )
         switch ($action) {
-            "SelectClip" { return "/composition/layers/{0}/connectspecificclip" }
-            "ClearLayer" { return "/composition/layers/{0}/clear" }
+            "TriggerClip" { return "/composition/layers/{0}/connectspecificclip" }
+            "ClearTarget" { return "/composition/layers/{0}/clear" }
             "Opacity" { return "/composition/layers/{0}/video/opacity" }
             "TransitionTime" { return "/composition/layers/{0}/transition/duration" }
             "TriggerGroupColumn" { return "/composition/groups/{0}/connectspecificcolumn" }
@@ -359,10 +369,10 @@ $functions = {
                                 To      = "ResolumeControl"
                                 From    = "ScheduleWatcher"
                                 Payload = @{
-                                    command = "Schedule"
+                                    command = "ScheduleTrigger"
                                     args    = @{
                                         Action = $action.action
-                                        Layer  = $action.layer
+                                        Target = $action.target
                                         Value  = $action.value
                                     }
                                 }
@@ -405,11 +415,10 @@ $functions = {
                 }
                 $params = $message.payload.args
                 foreach ($command in $params) {
-                    Write-Information "$($command.Action) to layer/group $($command.Layer) with value $($command.Value)"
+                    Write-Information "$($command.Action) to layer/group $($command.Target) with value $($command.Value)"
                     # Bit unorthodoxic use of string formatting. As Layer/group information is inbetween the OSC message, this is easiest way
                     # This is the only approach to abstract away the layer/group information away and make additional triggers potentially easier
-                    # TODO: Consider changing layer to target in YAML
-                    $OSCAction = (Find-OSCAction $command.Action) -f $command.layer
+                    $OSCAction = (Find-OSCAction $command.Action) -f $command.target
                     if ($null -ne $OSCAction) {
                         if ($command.Value -isnot [int]) {
                             $OSCValue = switch ($command.Value) {
@@ -455,7 +464,7 @@ $functions = {
                                 }
                             }
                         }
-                        if ($command.Action -match "ClearLayer") {
+                        if ($command.Action -match "ClearTarget") {
                             $OSCValue = $null
                         }
                         if ($null -eq $OSCValue) {
@@ -490,8 +499,8 @@ $functions = {
         $y = $global:yaml
         $threadconf = ($global:config).($global:thread)
         $q = $global:queue
-        Write-Information "Connecting to MQTT"
         while ($threadconf.Enabled) {
+            Write-Information "Connecting to MQTT"
             try {
                 $Session = Connect-MQTTBroker -Hostname $parameters.MQTTBroker -Credential $parameters.MqttCredential
                 $SourceIdentifier = [guid]::NewGuid()
@@ -544,12 +553,23 @@ $functions = {
                     Start-Sleep -Milliseconds 100
                 }
             }
-            catch {}
-            foreach ($topic in $y.mqtt.Keys) {
-                $Session.Unsubscribe($Topic) | Out-Null
+            catch {
+                Write-Information "Catch: Unsubribing from events and disconnecting"
+                foreach ($topic in $y.mqtt.Keys) {
+                    $Session.Unsubscribe($Topic) | Out-Null
+                }
+                Disconnect-MQTTBroker $Session
+                Unregister-Event -SourceIdentifier $SourceIdentifier -ErrorAction SilentlyContinue
+                Write-Information "Catch: Disconnected"
             }
-            Unregister-Event -SourceIdentifier $SourceIdentifier
-            Disconnect-MQTTBroker $Session
+            if ($Session.IsConnected) {
+                Write-Information "Unsubribing from events and disconnecting"
+                foreach ($topic in $y.mqtt.Keys) {
+                    $Session.Unsubscribe($Topic) | Out-Null
+                }
+                Disconnect-MQTTBroker $Session
+            }
+            Unregister-Event -SourceIdentifier $SourceIdentifier -ErrorAction SilentlyContinue
             Write-Information "Disconnected"
         }
         Write-Information "Exiting"

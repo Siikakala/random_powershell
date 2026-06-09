@@ -1,34 +1,36 @@
 mqtt:
   topic1:
     - content: someword
-      action: SelectClip
-      layer: 42
+      key: somekey
+      action: TriggerClip
+      target: 42
       value: 2
     - content: someotherword
-      action: SelectClip
-      layer: 42
+      key: somekey
+      action: TriggerClip
+      target: 42
       value: 3
   topic2:
     - content: clear
-      action: ClearLayer
-      layer: 42
+      action: ClearTarget
+      target: 42
       value: 1
 schedule:
   - name: "Event starts"
     time: "2026-06-03 11:00"
     actions:
-      - action: ClearLayer
-        layer: 67
+      - action: ClearTarget
+        target: 67
         value: off
-      - action: SelectClip
-        layer: 67
+      - action: TriggerClip
+        target: 67
         value: 2
       - action: Opacity
-        layer: 67
+        target: 67
         value: 80
   - name: "Event stops"
     time: "2026-06-03 21:00"
     actions:
-      - action: ClearLayer
-        layer: 67
+      - action: Cleartarget
+        target: 67
         value: 1
